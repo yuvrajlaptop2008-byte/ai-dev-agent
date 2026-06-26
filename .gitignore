@@ -6,3 +6,4 @@ frontend/dist/
 *.log
 .DS_Store
 /tmp/
+memory.json
