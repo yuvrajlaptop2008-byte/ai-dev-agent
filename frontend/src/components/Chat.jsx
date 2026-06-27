@@ -1,123 +1,93 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useContext } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import { socket, API } from '../App'
+import { socket, API, AppCtx } from '../App'
 
-export default function Chat({ model, convId, setConvId }) {
+export default function Chat() {
+  const { model, convId, setConvId } = useContext(AppCtx)
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
-  const [streamContent, setStreamContent] = useState('')
+  const [streamBuf, setStreamBuf] = useState('')
   const bottomRef = useRef(null)
+  const taRef = useRef(null)
 
   useEffect(() => {
-    if (convId) loadMessages()
+    if (convId) fetch(`${API}/chat/conversations/${convId}/messages`).then(r => r.json()).then(d => setMessages(d)).catch(() => {})
     else setMessages([])
   }, [convId])
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, streamContent])
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, streamBuf])
 
   useEffect(() => {
-    socket.on('chunk', (c) => setStreamContent(p => p + c))
+    socket.on('chunk', c => setStreamBuf(p => p + c))
     socket.on('done', () => {
-      setStreaming(false)
-      setStreamContent('')
-      if (convId) loadMessages()
+      setStreaming(false); setStreamBuf('')
+      if (convId) fetch(`${API}/chat/conversations/${convId}/messages`).then(r => r.json()).then(setMessages).catch(() => {})
     })
-    return () => { socket.off('chunk'); socket.off('done') }
+    socket.on('error', () => { setStreaming(false); setStreamBuf('') })
+    return () => { socket.off('chunk'); socket.off('done'); socket.off('error') }
   }, [convId])
-
-  const loadMessages = async () => {
-    const r = await fetch(`${API}/chat/conversations/${convId}/messages`)
-    const data = await r.json()
-    setMessages(data)
-  }
 
   const send = async () => {
     if (!input.trim() || streaming) return
-    const text = input; setInput('')
-
-    if (!convId) {
-      const r = await fetch(`${API}/chat/conversations`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: text.slice(0, 40), model }) })
-      const conv = await r.json()
-      setConvId(conv.id)
-      sendWithId(text, conv.id)
-    } else {
-      sendWithId(text, convId)
+    const txt = input; setInput('')
+    let cid = convId
+    if (!cid) {
+      const r = await fetch(`${API}/chat/conversations`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: txt.slice(0, 50), model }) })
+      cid = (await r.json()).id; setConvId(cid)
     }
-  }
-
-  const sendWithId = async (text, cid) => {
-    setMessages(p => [...p, { role: 'user', content: text }])
-    setStreaming(true)
-    setStreamContent('')
-
+    setMessages(p => [...p, { role: 'user', content: txt }])
+    setStreaming(true); setStreamBuf('')
     const history = messages.map(m => ({ role: m.role, content: m.content }))
-    socket.emit('stream-chat', { messages: [...history, { role: 'user', content: text }], model, convId: cid })
+    socket.emit('stream-chat', { messages: [...history, { role: 'user', content: txt }], model, convId: cid })
   }
 
-  const onKey = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }
+  const MD = ({ children }) => (
+    <ReactMarkdown components={{ code({ inline, className, children }) {
+      const lang = /language-(\w+)/.exec(className || '')?.[1]
+      return !inline && lang
+        ? <SyntaxHighlighter style={oneDark} language={lang} PreTag="div">{String(children).replace(/\n$/, '')}</SyntaxHighlighter>
+        : <code className="icode">{children}</code>
+    }}}>{children}</ReactMarkdown>
+  )
+
+  const STARTERS = ['Explain how neural networks work', 'Write a Python web scraper', 'How do I optimize a PostgreSQL query?', 'Create a REST API in Node.js', 'Debug this: TypeError: cannot read property of undefined', 'Best practices for React performance']
 
   return (
-    <div className="chat-view">
-      <div className="chat-messages">
+    <div className="chat-layout">
+      <div className="chat-msgs">
         {messages.length === 0 && !streaming && (
-          <div className="empty-state">
-            <div className="empty-icon">💬</div>
-            <h2>AI Dev Agent</h2>
-            <p>Ask me to solve issues, write code, plan projects, research solutions...</p>
-            <div className="suggestions">
-              {['Fix the bug in my GitHub issue #1', 'Write a REST API in Node.js', 'Plan a microservices architecture', 'Review my code for security issues'].map(s => (
-                <button key={s} className="suggestion" onClick={() => setInput(s)}>{s}</button>
-              ))}
-            </div>
+          <div className="empty">
+            <div style={{ fontSize: 56 }}>⚡</div>
+            <h2>ARIA Chat</h2>
+            <p style={{ color: 'var(--text2)', marginBottom: 20 }}>Multi-model AI chat with streaming. Ask anything.</p>
+            <div className="suggs">{STARTERS.map(s => <button key={s} className="sugg" onClick={() => setInput(s)}>{s}</button>)}</div>
           </div>
         )}
         {messages.map((m, i) => (
-          <div key={i} className={`message ${m.role}`}>
-            <div className="message-avatar">{m.role === 'user' ? '👤' : '⚡'}</div>
-            <div className="message-body">
-              <ReactMarkdown components={{
-                code({ inline, className, children }) {
-                  const lang = /language-(\w+)/.exec(className || '')?.[1]
-                  return !inline && lang ? (
-                    <SyntaxHighlighter style={oneDark} language={lang} PreTag="div">{String(children).replace(/\n$/, '')}</SyntaxHighlighter>
-                  ) : <code className="inline-code">{children}</code>
-                }
-              }}>{m.content}</ReactMarkdown>
-            </div>
+          <div key={i} className={`msg ${m.role}`}>
+            <div className="msg-av">{m.role === 'user' ? '👤' : '⚡'}</div>
+            <div className="msg-body"><MD>{m.content}</MD></div>
           </div>
         ))}
         {streaming && (
-          <div className="message assistant">
-            <div className="message-avatar">⚡</div>
-            <div className="message-body">
-              <ReactMarkdown>{streamContent || '...'}</ReactMarkdown>
-            </div>
+          <div className="msg assistant">
+            <div className="msg-av">⚡</div>
+            <div className="msg-body"><MD>{streamBuf || '...'}</MD></div>
           </div>
         )}
         <div ref={bottomRef} />
       </div>
-
-      <div className="chat-input-area">
-        <div className="chat-input-wrap">
-          <textarea
-            className="chat-textarea"
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={onKey}
-            placeholder="Ask anything... (Shift+Enter for newline)"
-            rows={1}
-            disabled={streaming}
-          />
-          <button className={`send-btn ${streaming ? 'loading' : ''}`} onClick={send} disabled={streaming}>
-            {streaming ? '⏳' : '➤'}
-          </button>
+      <div className="chat-in">
+        <div className="chat-in-wrap">
+          <textarea ref={taRef} className="chat-ta" value={input} onChange={e => setInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+            placeholder="Message ARIA... (Shift+Enter for newline)" rows={1} disabled={streaming} />
+          <button className="send" onClick={send} disabled={streaming}>{streaming ? '⏳' : '➤'}</button>
         </div>
-        <div className="chat-footer">Model: <strong>{model}</strong> · Press Enter to send</div>
+        <div className="chat-hint">Model: <strong>{model}</strong> · Enter to send · Shift+Enter for newline</div>
       </div>
     </div>
   )

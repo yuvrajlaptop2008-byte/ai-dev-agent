@@ -1,29 +1,22 @@
 const router = require('express').Router();
 const gh = require('../services/github');
 
-router.get('/repos/:owner', async (req, res) => {
-  try { res.json(await gh.getUserRepos(req.params.owner)); }
-  catch (e) { res.status(500).json({ error: e.message }); }
-});
+const h = fn => async (req, res) => { try { res.json(await fn(req, res)); } catch (e) { res.status(500).json({ error: e.message }); } };
 
-router.get('/repos/:owner/:repo/issues', async (req, res) => {
-  try { res.json(await gh.listIssues(req.params.owner, req.params.repo, req.query.state || 'open')); }
-  catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-router.get('/repos/:owner/:repo/issues/:number', async (req, res) => {
-  try { res.json(await gh.getIssue(req.params.owner, req.params.repo, parseInt(req.params.number))); }
-  catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-router.post('/repos/:owner/:repo/issues/:number/comment', async (req, res) => {
-  try { res.json(await gh.createIssueComment(req.params.owner, req.params.repo, parseInt(req.params.number), req.body.body)); }
-  catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-router.get('/repos/:owner/:repo/contents', async (req, res) => {
-  try { res.json(await gh.getRepoContents(req.params.owner, req.params.repo, req.query.path || '')); }
-  catch (e) { res.status(500).json({ error: e.message }); }
-});
+router.get('/repos/:owner', h(req => gh.getUserRepos(req.params.owner)));
+router.get('/repos/:owner/:repo', h(req => gh.getRepo(req.params.owner, req.params.repo)));
+router.get('/repos/:owner/:repo/issues', h(req => gh.listIssues(req.params.owner, req.params.repo, req.query.state || 'open')));
+router.get('/repos/:owner/:repo/issues/:n', h(req => gh.getIssue(req.params.owner, req.params.repo, req.params.n)));
+router.post('/repos/:owner/:repo/issues/:n/comment', h(req => gh.commentIssue(req.params.owner, req.params.repo, req.params.n, req.body.body)));
+router.patch('/repos/:owner/:repo/issues/:n', h(req => gh.updateIssue(req.params.owner, req.params.repo, req.params.n, req.body)));
+router.get('/repos/:owner/:repo/prs', h(req => gh.listPRs(req.params.owner, req.params.repo, req.query.state || 'open')));
+router.post('/repos/:owner/:repo/prs', h(req => gh.createPR(req.params.owner, req.params.repo, req.body.title, req.body.body, req.body.head, req.body.base || 'main')));
+router.get('/repos/:owner/:repo/branches', h(req => gh.listBranches(req.params.owner, req.params.repo)));
+router.get('/repos/:owner/:repo/commits', h(req => gh.listCommits(req.params.owner, req.params.repo, 20)));
+router.get('/repos/:owner/:repo/contents', h(req => gh.listContents(req.params.owner, req.params.repo, req.query.path || '')));
+router.get('/repos/:owner/:repo/workflows', h(req => gh.listWorkflows(req.params.owner, req.params.repo)));
+router.post('/issues', h(req => gh.createIssue(req.body.owner, req.body.repo, req.body.title, req.body.body, req.body.labels ? req.body.labels.split(',').map(l=>l.trim()) : [], [])));
+router.get('/search/repos', h(req => gh.searchRepos(req.query.q)));
+router.get('/search/code', h(req => gh.searchCode(req.query.q, req.query.owner, req.query.repo)));
 
 module.exports = router;
