@@ -261,3 +261,30 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 .conv-del-btn{background:none;border:none;color:var(--text3);cursor:pointer;padding:0 2px;font-size:14px;opacity:0;flex-shrink:0}
 .conv-it:hover .conv-del-btn{opacity:1}
 .conv-it:hover .conv-del-btn:hover{color:var(--red)}
+
+/* CONTRIBUTE */
+.contrib-layout{display:flex;height:100%;overflow:hidden}
+.contrib-left{width:360px;border-right:1px solid var(--border);padding:14px;overflow-y:auto;flex-shrink:0}
+.contrib-right{flex:1;overflow-y:auto;padding:16px}
+.action-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px}
+.action-card{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;cursor:pointer;text-align:left;transition:.15s;display:flex;flex-direction:column;gap:3px}
+.action-card:hover{border-color:var(--accent);background:rgba(88,166,255,.05)}
+.action-card.loading{opacity:.6;cursor:not-allowed}
+.action-icon{font-size:18px}
+.action-label{font-size:13px;font-weight:600;color:var(--text)}
+.action-desc{font-size:11px;color:var(--text3)}
+.contrib-log{display:flex;flex-direction:column;gap:3px;max-height:200px;overflow-y:auto}
+.log-line{font-size:12px;color:var(--text2);padding:2px 0;font-family:monospace}
+.result-item{display:flex;gap:10px;padding:10px;background:var(--bg3);border-radius:6px;margin-bottom:6px}
+.ri-number{font-size:18px;font-weight:700;color:var(--accent);flex-shrink:0}
+.ri-title{font-size:13px;font-weight:500;margin-bottom:2px}
+.ri-reason{font-size:12px;color:var(--text2)}
+.ri-diff{font-size:11px;padding:1px 6px;border-radius:3px;margin-top:4px;display:inline-block}
+.ri-diff-easy{background:rgba(63,185,80,.15);color:var(--green)}
+.ri-diff-medium{background:rgba(210,153,34,.15);color:var(--yellow)}
+.ri-diff-hard{background:rgba(248,81,73,.15);color:var(--red)}
+.pr-link{font-size:13px;margin-bottom:8px}
+.pr-link a{color:var(--accent)}
+
+/* MODEL FREE BADGE */
+.model-opt-free{font-size:9px;background:rgba(63,185,80,.2);color:var(--green);padding:1px 4px;border-radius:2px;margin-left:4px;vertical-align:middle}

@@ -20,6 +20,7 @@ app.use('/api/models', require('./routes/models'));
 app.use('/api/mcp', require('./routes/mcp'));
 app.use('/api/agent', require('./routes/agent'));
 app.use('/api/files', require('./routes/files'));
+app.use('/api/contributor', require('./routes/contributor'));
 app.use('/api/memory', require('./routes/memory'));
 app.use('/api/brain', require('./routes/brain'));
 
@@ -85,3 +86,4 @@ httpServer.listen(PORT, () => {
   console.log(`🌐 http://localhost:${PORT}`);
   console.log(`🤖 80+ tools | Multi-model | VSCode | GitHub | Browser Research\n`);
 });
+// Added by patch

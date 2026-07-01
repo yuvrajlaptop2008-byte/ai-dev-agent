@@ -9,6 +9,7 @@ const NAV = [
   { id: 'vscode',   icon: '💻', label: 'VS Code' },
   { id: 'terminal', icon: '⌨️', label: 'Terminal' },
   { id: 'mcp',      icon: '🔌', label: 'MCP' },
+  { id: 'contribute', icon: '🤝', label: 'Contribute' },
   { id: 'settings', icon: '⚙️', label: 'Settings' },
 ]
 
@@ -68,6 +69,12 @@ export default function Sidebar({ view, setView, connected }) {
                 ))}
               </>
             )}
+            <div className="model-group-label">🆓 Free Models ({(models.free||[]).length})</div>
+            {(models.free||[]).filter(id => !search || id.toLowerCase().includes(search.toLowerCase())).slice(0,40).map(id => (
+              <div key={id+'f'} className={`model-opt ${model===id?'sel':''}`} onClick={() => { setModel(id); setShowModels(false); setSearch('') }}>
+                <span className="model-opt-id">{id.replace(':free','')} <span className="model-opt-free">FREE</span></span>
+              </div>
+            ))}
             <div className="model-group-label">🌐 All OpenRouter ({models.all?.length || 0})</div>
             {filtered.slice(0, 80).map(id => (
               <div key={id} className={`model-opt ${model === id ? 'sel' : ''}`} onClick={() => { setModel(id); setShowModels(false); setSearch('') }}>
