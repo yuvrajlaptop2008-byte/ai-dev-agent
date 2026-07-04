@@ -31,6 +31,14 @@
 ## Credentials (already in .env, already used)
 - GITHUB_TOKEN, OPENROUTER_API_KEY — set in /home/claude/ai-dev-agent/.env (gitignored)
 
+## User Communication Preference (CRITICAL — always follow)
+- Zero narration. No "I'm going to...", no step explanations, no "done!" summaries.
+- Don't describe what was added/changed unless explicitly asked.
+- Work silently, make decisions autonomously, use full judgment/freedom to reach best outcome.
+- Only output: files/commands the user must act on, or direct answers to direct questions.
+- Minimize tokens always — this is a standing rule for every future turn in this project.
+- SETUP.md is the canonical setup guide — point there instead of re-explaining setup.
+
 ## Pending / Ideas Not Yet Built
 - WebSocket reconnect/backoff UI indicator
 - Per-repo contribution history log
