@@ -1,14 +1,12 @@
 const router = require('express').Router();
-const { getModels, MODEL_PRESETS, FREE_MODELS } = require('../services/openrouter');
-const { get, set } = require('../db');
+const or = require('../services/openrouter');
 router.get('/', async (req, res) => {
-  try {
-    const models = await getModels();
-    res.json({ models, presets: MODEL_PRESETS, free: FREE_MODELS });
-  } catch {
-    res.json({ models: [], presets: MODEL_PRESETS, free: FREE_MODELS });
-  }
+  const models = await or.getModels();
+  res.json({ models, presets: or.MODEL_PRESETS, free: or.getFreeModels() });
 });
-router.get('/default', (req, res) => res.json({ model: get('default_model') || 'anthropic/claude-3.5-sonnet' }));
-router.post('/default', (req, res) => { set('default_model', req.body.model); res.json({ ok: true }); });
+router.post('/refresh', async (req, res) => {
+  const models = await or.getModels(true);
+  res.json({ ok: true, info: or.getCacheInfo() });
+});
+router.get('/info', (req, res) => res.json(or.getCacheInfo()));
 module.exports = router;

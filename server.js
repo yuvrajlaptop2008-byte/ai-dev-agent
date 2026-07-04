@@ -80,6 +80,10 @@ io.on('connection', (socket) => {
 });
 
 global.io = io;
+// Auto-refresh OpenRouter model list every 6h
+require('./services/openrouter').getModels(true).catch(()=>{});
+setInterval(() => require('./services/openrouter').getModels(true).catch(()=>{}), 6*60*60*1000);
+
 const PORT = process.env.PORT || 3001;
 httpServer.listen(PORT, () => {
   console.log(`\n⚡ ARIA - AI Dev Agent`);

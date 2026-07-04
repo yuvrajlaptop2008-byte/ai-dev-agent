@@ -6,6 +6,8 @@ export default function Settings() {
   const [s, setS] = useState({})
   const [saved, setSaved] = useState(false)
   const [memData, setMemData] = useState(null)
+  const [refreshing, setRefreshing] = useState(false)
+  const refreshModels = async () => { setRefreshing(true); await fetch(`${API}/models/refresh`, { method: 'POST' }); notify('✅ Model list refreshed', 'success'); setRefreshing(false) }
 
   useEffect(() => {
     fetch(`${API}/memory`).then(r => r.json()).then(setS)
@@ -50,6 +52,7 @@ export default function Settings() {
         <button className={`btn btn-primary ${saved ? 'btn-saved' : ''}`} onClick={save} style={{ marginTop: 12 }}>
           {saved ? '✅ Saved!' : '💾 Save Settings'}
         </button>
+        <button className="btn" onClick={refreshModels} disabled={refreshing} style={{ marginTop: 12, marginLeft: 8 }}>{refreshing ? '⏳ Refreshing...' : '🔄 Refresh Model List'}</button>
       </div>
 
       <div className="panel">

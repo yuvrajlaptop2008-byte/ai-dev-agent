@@ -122,14 +122,29 @@ Be specific and actionable.`;
 }
 
 // ─── MEMORY SYSTEM ────────────────────────────────────────
+function condense(value) {
+  // Keep memory lean: cap strings, drop huge objects, summarize arrays
+  if (typeof value === 'string') return value.length > 500 ? value.slice(0, 500) + '…' : value;
+  if (Array.isArray(value)) return value.slice(0, 10).map(condense);
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const k of Object.keys(value).slice(0, 15)) out[k] = condense(value[k]);
+    return out;
+  }
+  return value;
+}
+
 async function saveMemory(key, value, category = 'general') {
   await ensureDir();
   const file = path.join(BRAIN_DIR, 'memory.json');
   let mem = {};
   try { mem = JSON.parse(await fs.readFile(file, 'utf8')); } catch {}
   if (!mem[category]) mem[category] = {};
-  mem[category][key] = { value, timestamp: new Date().toISOString(), accesses: (mem[category][key]?.accesses || 0) + 1 };
-  await fs.writeFile(file, JSON.stringify(mem, null, 2));
+  mem[category][key] = { value: condense(value), ts: Date.now() };
+  // Cap category size to last 50 entries (drop oldest)
+  const entries = Object.entries(mem[category]).sort((a,b) => b[1].ts - a[1].ts).slice(0, 50);
+  mem[category] = Object.fromEntries(entries);
+  await fs.writeFile(file, JSON.stringify(mem));
   return mem[category][key];
 }
 

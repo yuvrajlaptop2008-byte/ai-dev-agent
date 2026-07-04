@@ -1,6 +1,9 @@
 const axios = require('axios');
 const BASE = 'https://openrouter.ai/api/v1';
 const getKey = () => process.env.OPENROUTER_API_KEY;
+const { PAID_MODELS: SEED_PAID, FREE_MODELS: SEED_FREE } = require('./model_catalog');
+let _cache = { all: [], free: SEED_FREE, ts: 0 };
+const CACHE_TTL = 6*60*60*1000;
 const HEADERS = () => ({
   'Authorization': `Bearer ${getKey()}`,
   'HTTP-Referer': 'https://github.com/yuvrajlaptop2008-byte/ai-dev-agent',
@@ -107,12 +110,20 @@ function selectModel(task) {
   return process.env.DEFAULT_MODEL || 'anthropic/claude-3.5-sonnet';
 }
 
-async function getModels() {
+async function getModels(force) {
+  if (!force && _cache.all.length && Date.now() - _cache.ts < CACHE_TTL) return _cache.all;
   try {
     const r = await axios.get(`${BASE}/models`, { headers: HEADERS(), timeout: 12000 });
-    return r.data.data.sort((a,b) => a.id > b.id ? 1 : -1);
-  } catch { return []; }
+    const list = r.data.data.sort((a,b) => a.id > b.id ? 1 : -1);
+    const free = list.filter(m => m.id.includes(':free') || (m.pricing && +m.pricing.prompt === 0 && +m.pricing.completion === 0)).map(m => m.id);
+    _cache = { all: list, free: free.length ? free : SEED_FREE, ts: Date.now() };
+    return list;
+  } catch {
+    return _cache.all.length ? _cache.all : [];
+  }
 }
+function getFreeModels() { return _cache.free.length ? _cache.free : SEED_FREE; }
+function getCacheInfo() { return { count: _cache.all.length, freeCount: getFreeModels().length, lastRefresh: _cache.ts ? new Date(_cache.ts).toISOString() : null }; }
 
 async function chat(messages, model, tools, systemPrompt, opts = {}) {
   model = model || 'anthropic/claude-3.5-sonnet';
@@ -156,4 +167,4 @@ async function streamChat(data, onChunk, onDone, onError) {
   } catch (e) { if (onError) onError(e); else throw e; }
 }
 
-module.exports = { chat, streamChat, getModels, MODEL_PRESETS, FREE_MODELS, selectModel };
+module.exports = { chat, streamChat, getModels, getFreeModels, getCacheInfo, MODEL_PRESETS, FREE_MODELS: SEED_FREE, selectModel };
