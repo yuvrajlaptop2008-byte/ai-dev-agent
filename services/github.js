@@ -7,7 +7,12 @@ const { promisify } = require('util');
 const execAsync = promisify(exec);
 
 const getKey = () => process.env.GITHUB_TOKEN;
-const getOctokit = () => new Octokit({ auth: getKey() });
+let _octo;
+const getOctokit = () => {
+  if (_octo) return _octo;
+  _octo = new Octokit({ auth: getKey(), retry: { enabled: true, retries: 3 }, throttle: { onRateLimit: () => true, onSecondaryRateLimit: () => true } });
+  return _octo;
+};
 
 // ─── ISSUES ────────────────────────────────────────────────
 async function getIssue(owner, repo, n) {

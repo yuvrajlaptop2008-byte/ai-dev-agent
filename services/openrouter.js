@@ -129,7 +129,14 @@ const FALLBACK_CHAIN = ['anthropic/claude-3.5-sonnet', 'meta-llama/llama-3.3-70b
 
 async function chat(messages, model, tools, systemPrompt, opts = {}) {
   model = model || 'anthropic/claude-3.5-sonnet';
-  const msgs = systemPrompt ? [{ role: 'system', content: systemPrompt }, ...messages] : messages;
+  let sysMsg = null;
+  if (systemPrompt) {
+    // Anthropic prompt caching: mark long static system prompts cacheable (cuts cost+latency on repeated calls)
+    sysMsg = model.startsWith('anthropic/') && systemPrompt.length > 1000
+      ? { role: 'system', content: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }] }
+      : { role: 'system', content: systemPrompt };
+  }
+  const msgs = sysMsg ? [sysMsg, ...messages] : messages;
   const body = { model, messages: msgs, max_tokens: opts.max_tokens || 16000, temperature: opts.temperature ?? 0.1 };
   if (tools?.length) { body.tools = tools; body.tool_choice = 'auto'; }
   try {

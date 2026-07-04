@@ -71,83 +71,100 @@ To solve a GitHub issue:
 - Every action should have clear reasoning
 - Report concrete results: URLs, file paths, issue numbers, PR links`;
 
+const FAST_SYSTEM = `You are ARIA in FAST MODE. Skip extended thinking. Act directly with tools. Be concise. Complete the task in as few steps as possible while staying correct. Report the final result clearly with links/paths.`;
+
 async function runAgent(data, socket) {
-  const { task, model, repoOwner, repoName, maxIterations } = data;
+  const { task, model, repoOwner, repoName, maxIterations, mode } = data;
   const runId = uuid();
   const ctx = { owner: repoOwner, repo: repoName, model: model || 'anthropic/claude-3.5-sonnet' };
+  const isFast = mode === 'fast';
 
   db.prepare('INSERT INTO agent_runs VALUES (?,?,?,?,?,unixepoch())').run(runId, task, 'running', '[]', null);
 
   const steps = [];
+  let lastSave = 0;
   const addStep = (step) => {
     step.ts = Date.now();
     steps.push(step);
-    try { db.prepare('UPDATE agent_runs SET steps=? WHERE id=?').run(JSON.stringify(steps), runId); } catch {}
+    if (Date.now() - lastSave > 800 || step.type === 'complete' || step.type === 'error') {
+      try { db.prepare('UPDATE agent_runs SET steps=? WHERE id=?').run(JSON.stringify(steps), runId); } catch {}
+      lastSave = Date.now();
+    }
     if (socket) socket.emit('agent-step', { runId, step });
   };
 
   if (socket) socket.emit('agent-start', { runId, task });
-  addStep({ type: 'init', content: `🚀 Task: ${task}\n🧠 Model: ${ctx.model}\n🐙 Repo: ${repoOwner || '(none)'}/${repoName || '(none)'}` });
+  addStep({ type: 'init', content: `🚀 ${task}\n🧠 ${ctx.model}${isFast ? ' ⚡fast' : ''} | 🐙 ${repoOwner || '-'}/${repoName || '-'}` });
 
-  // Auto-select best model if not specified
   const selectedModel = ctx.model || brain.selectBestModel(task);
   ctx.model = selectedModel;
+  const systemPrompt = isFast ? FAST_SYSTEM : SYSTEM;
 
   const messages = [{ role: 'user', content: task }];
   const toolDefs = tools.getToolDefs();
-  const maxIter = maxIterations || 25;
+  const maxIter = maxIterations || (isFast ? 8 : 25);
   let iteration = 0;
 
   try {
     while (iteration < maxIter) {
       iteration++;
-      addStep({ type: 'iteration', content: `Iteration ${iteration}/${maxIter}` });
+      addStep({ type: 'iteration', content: `${iteration}/${maxIter}` });
 
       let response;
       try {
-        response = await chat(messages, selectedModel, toolDefs, SYSTEM, { max_tokens: 16000, temperature: 0.1 });
+        response = await chat(messages, selectedModel, toolDefs, systemPrompt, { max_tokens: isFast ? 4000 : 16000, temperature: 0.1 });
       } catch (e) {
-        addStep({ type: 'error', content: `Model error: ${e.message}. Retrying with claude-3.5-sonnet...` });
-        response = await chat(messages, 'anthropic/claude-3.5-sonnet', toolDefs, SYSTEM, { max_tokens: 16000, temperature: 0.1 });
+        addStep({ type: 'error', content: `Model error: ${e.message} → retrying claude-3.5-sonnet` });
+        response = await chat(messages, 'anthropic/claude-3.5-sonnet', toolDefs, systemPrompt, { max_tokens: 8000, temperature: 0.1 });
       }
 
       const choice = response.choices[0];
       const msg = choice.message;
       messages.push(msg);
 
-      if (msg.content) {
-        addStep({ type: 'thinking', content: msg.content });
-      }
+      if (msg.content) addStep({ type: 'thinking', content: msg.content });
 
       if (!msg.tool_calls || msg.tool_calls.length === 0) {
-        addStep({ type: 'complete', content: '✅ Agent completed task' });
+        addStep({ type: 'complete', content: '✅ Done' });
         break;
       }
 
-      for (const tc of msg.tool_calls) {
-        const toolName = tc.function.name;
+      // Parse all calls first
+      const calls = msg.tool_calls.map(tc => {
         let args = {};
         try { args = JSON.parse(tc.function.arguments); } catch {}
+        return { tc, name: tc.function.name, args };
+      });
 
-        const argPreview = JSON.stringify(args).slice(0, 200);
-        addStep({ type: 'tool_call', tool: toolName, content: argPreview });
+      // Run read-only tools in parallel, mutating tools sequentially (safety)
+      const parallelizable = calls.filter(c => tools.READ_ONLY_TOOLS.has(c.name));
+      const sequential = calls.filter(c => !tools.READ_ONLY_TOOLS.has(c.name));
 
-        let result;
+      const runOne = async (c) => {
+        addStep({ type: 'tool_call', tool: c.name, content: JSON.stringify(c.args).slice(0, 200) });
         try {
-          result = await tools.execute(toolName, args, ctx);
+          const result = await tools.execute(c.name, c.args, ctx);
           const resultStr = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
-          addStep({ type: 'tool_result', tool: toolName, content: resultStr.slice(0, 3000) });
-          result = resultStr;
+          addStep({ type: 'tool_result', tool: c.name, content: resultStr.slice(0, 3000) });
+          return { tc: c.tc, content: resultStr };
         } catch (e) {
-          result = `❌ Tool error (${toolName}): ${e.message}`;
-          addStep({ type: 'tool_error', tool: toolName, content: result });
+          const err = `❌ ${c.name}: ${e.message}`;
+          addStep({ type: 'tool_error', tool: c.name, content: err });
+          return { tc: c.tc, content: err };
         }
+      };
 
-        messages.push({ role: 'tool', tool_call_id: tc.id, content: String(result) });
+      if (parallelizable.length) {
+        const results = await Promise.all(parallelizable.map(runOne));
+        for (const r of results) messages.push({ role: 'tool', tool_call_id: r.tc.id, content: String(r.content) });
+      }
+      for (const c of sequential) {
+        const r = await runOne(c);
+        messages.push({ role: 'tool', tool_call_id: r.tc.id, content: String(r.content) });
       }
     }
 
-    if (iteration >= maxIter) addStep({ type: 'warning', content: `⚠️ Reached max iterations (${maxIter})` });
+    if (iteration >= maxIter) addStep({ type: 'warning', content: `⚠️ Max iterations (${maxIter})` });
 
     const finalMsg = messages.filter(m => m.role === 'assistant' && m.content).pop();
     const result = finalMsg?.content || 'Task completed';
@@ -164,4 +181,4 @@ async function runAgent(data, socket) {
   return runId;
 }
 
-module.exports = { runAgent, SYSTEM };
+module.exports = { runAgent, SYSTEM, FAST_SYSTEM };

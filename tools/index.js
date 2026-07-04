@@ -27,6 +27,14 @@ const sh = async (cmd, cwd = WORKSPACE, timeout = 45000) => {
 // ═══════════════════════════════════════════════════════════
 // TOOL IMPLEMENTATIONS
 // ═══════════════════════════════════════════════════════════
+const READ_ONLY_TOOLS = new Set([
+  'read_file','list_files','search_in_files','web_search','fetch_url','deep_research','read_website',
+  'search_npm','search_pypi','fetch_github_readme','fetch_docs','fetch_api','analyze_image',
+  'github_get_issue','github_list_issues','github_get_file','github_list_files','github_list_branches',
+  'github_list_prs','github_get_repo','github_search_code','github_search_repos','github_list_commits',
+  'github_list_workflows','github_workflow_runs','recall','search_memory','analyze_code','vscode_list_extensions'
+]);
+
 const T = {
 
   // ── 1. THINKING & REASONING ───────────────────────────
@@ -567,4 +575,4 @@ async function execute(name, args, ctx) {
   return await T[name](args, ctx);
 }
 
-module.exports = { execute, getToolDefs, WORKSPACE };
+module.exports = { execute, getToolDefs, WORKSPACE, READ_ONLY_TOOLS };

@@ -45,6 +45,16 @@
 - New tool: analyze_image (vision, uses gemini-2.0-flash-exp:free)
 - .env.example updated with SERPER_API_KEY, GITHUB_WEBHOOK_SECRET
 
+## v7 additions (speed + intelligence)
+- agent.js: parallel execution of read-only tool calls (Promise.all) via tools.READ_ONLY_TOOLS set; mutating tools stay sequential for safety
+- agent.js: fast/deep mode (`mode: 'fast'|'deep'` in run-agent payload) — fast uses FAST_SYSTEM (short prompt), maxIter 8, max_tokens 4000
+- agent.js: DB checkpoint writes throttled to 800ms instead of every step (fewer disk writes)
+- openrouter.js: Anthropic prompt caching (cache_control: ephemeral) auto-applied when model starts with anthropic/ and system prompt >1000 chars — cuts repeated system-prompt cost/latency
+- github.js: Octokit retry(3x) + secondary-rate-limit throttle plugins enabled, singleton instance
+- brain.js: in-memory response cache (15min TTL, cap 200) for deepThink
+- browser.js: in-memory cache (15min TTL, cap 100) for deepResearch
+- Frontend Agent tab: Deep/Fast mode toggle buttons
+
 ## Pending / Ideas Not Yet Built
 - WebSocket reconnect/backoff UI indicator
 - Per-repo contribution history log

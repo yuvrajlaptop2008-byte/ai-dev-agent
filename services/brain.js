@@ -9,8 +9,17 @@ const path = require('path');
 const BRAIN_DIR = '/tmp/agent-brain';
 const ensureDir = async () => fs.mkdir(BRAIN_DIR, { recursive: true });
 
+// ─── LIGHTWEIGHT RESPONSE CACHE (saves tokens on repeat queries, 15min TTL) ──
+const _cache = new Map();
+const CACHE_TTL = 15 * 60 * 1000;
+function cacheKey(fn, args) { return `${fn}:${JSON.stringify(args)}`; }
+function cacheGet(key) { const e = _cache.get(key); if (e && Date.now() - e.t < CACHE_TTL) return e.v; _cache.delete(key); return null; }
+function cacheSet(key, v) { _cache.set(key, { v, t: Date.now() }); if (_cache.size > 200) _cache.delete(_cache.keys().next().value); }
+
 // ─── THINKING ENGINE ──────────────────────────────────────
 async function deepThink(problem, model, context = '') {
+  const ck = cacheKey('think', { problem, model, context });
+  const cached = cacheGet(ck); if (cached) return cached;
   const prompt = `You are a deep reasoning AI. Think step by step about this problem.
 
 Problem: ${problem}
@@ -27,7 +36,9 @@ Think through:
 Be thorough, analytical, and precise.`;
 
   const r = await chat([{ role: 'user', content: prompt }], model, [], null, { max_tokens: 8000, temperature: 0.2 });
-  return r.choices[0].message.content;
+  const out = r.choices[0].message.content;
+  cacheSet(ck, out);
+  return out;
 }
 
 // ─── PLANNING ENGINE ──────────────────────────────────────

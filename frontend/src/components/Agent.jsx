@@ -38,6 +38,7 @@ export default function Agent() {
   const [runs, setRuns] = useState([])
   const [activeRun, setActiveRun] = useState(null)
   const [maxIter, setMaxIter] = useState(20)
+  const [mode, setMode] = useState('deep')
   const [tab, setTab] = useState('run') // run | history
   const stepsRef = useRef(null)
 
@@ -57,7 +58,7 @@ export default function Agent() {
   const run = () => {
     if (!task.trim() || running) return
     setRunning(true); setSteps([]); setResult(null); setTab('run')
-    socket.emit('run-agent', { task, model, repoOwner: repoCtx.owner, repoName: repoCtx.repo, maxIterations: maxIter })
+    socket.emit('run-agent', { task, model, repoOwner: repoCtx.owner, repoName: repoCtx.repo, maxIterations: maxIter, mode })
   }
 
   const fillTemplate = (tmpl) => {
@@ -89,6 +90,10 @@ export default function Agent() {
 
           <div className="run-config">
             <label>Max iterations: <input type="number" className="iter-input" value={maxIter} onChange={e => setMaxIter(+e.target.value)} min={1} max={50} /></label>
+            <div className="mode-toggle">
+              <button className={`mode-btn ${mode === 'deep' ? 'active' : ''}`} onClick={() => setMode('deep')}>🧠 Deep</button>
+              <button className={`mode-btn ${mode === 'fast' ? 'active' : ''}`} onClick={() => setMode('fast')}>⚡ Fast</button>
+            </div>
           </div>
 
           <button className={`run-btn ${running ? 'running' : ''}`} onClick={run} disabled={running}>

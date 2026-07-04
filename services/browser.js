@@ -113,19 +113,21 @@ async function search(query, num = 8) {
 }
 
 // ─── DEEP RESEARCH ────────────────────────────────────────
+const _researchCache = new Map();
 async function deepResearch(query, depth = 2) {
+  const ck = `${query}:${depth}`;
+  const c = _researchCache.get(ck);
+  if (c && Date.now() - c.t < 15 * 60 * 1000) return c.v;
+
   const report = { query, timestamp: new Date().toISOString(), searchResults: [], pageContents: [], summary: '' };
-
-  // Search
   report.searchResults = await search(query, 8);
-
-  // Fetch top pages
   if (depth >= 2) {
     const urls = report.searchResults.filter(r => r.url && r.url.startsWith('http')).slice(0, 3).map(r => r.url);
     const pages = await Promise.allSettled(urls.map(u => fetchPage(u, { timeout: 15000 })));
     pages.forEach(p => { if (p.status === 'fulfilled' && !p.value.error) report.pageContents.push(p.value); });
   }
-
+  _researchCache.set(ck, { v: report, t: Date.now() });
+  if (_researchCache.size > 100) _researchCache.delete(_researchCache.keys().next().value);
   return report;
 }
 
