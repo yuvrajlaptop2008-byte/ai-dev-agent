@@ -10,11 +10,13 @@ const ACTIONS = [
   { id: 'auto-label',     icon: '🏷️', label: 'Auto-Label Issues',      desc: 'AI labels all unlabeled issues' },
   { id: 'add-contributing',icon:'🤝', label: 'Add CONTRIBUTING.md',    desc: 'Add contributing guide' },
   { id: 'add-templates',  icon: '📋', label: 'Add Issue Templates',    desc: 'Add bug/feature templates' },
+  { id: 'build-project',  icon: '🚀', label: 'Build New OSS Project',  desc: 'Ship a complete new repo from an idea' },
 ]
 
 export default function Contribute() {
   const { model, repoCtx, notify } = useContext(AppCtx)
   const [issueNum, setIssueNum] = useState('')
+  const [idea, setIdea] = useState('')
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(null)
   const [log, setLog] = useState([])
@@ -27,6 +29,7 @@ export default function Contribute() {
     let url, body
     if (actionId === 'find-issues') { url = `/api/contributor/find-issues/${owner}/${repo}?model=${model}`; body = null }
     else if (actionId === 'solve-issue') { url = '/api/contributor/solve-issue'; body = { owner, repo, issue_number: parseInt(issueNum), model } }
+    else if (actionId === 'build-project') { url = '/api/builder/build'; body = { idea, model } }
     else { url = `/api/contributor/${actionId}`; body = { owner, repo, model } }
 
     try {
@@ -54,6 +57,11 @@ export default function Contribute() {
           <div style={{ marginBottom: 12 }}>
             <label className="sl">Issue # (for "Solve Issue")</label>
             <input className="input" type="number" value={issueNum} onChange={e => setIssueNum(e.target.value)} placeholder="123" style={{ width: 120 }} />
+          </div>
+
+          <div style={{ marginBottom: 12 }}>
+            <label className="sl">Project Idea (for "Build New OSS Project")</label>
+            <input className="input" value={idea} onChange={e => setIdea(e.target.value)} placeholder="e.g. CLI tool that converts markdown to slides" />
           </div>
 
           <div className="action-grid">

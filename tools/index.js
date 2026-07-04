@@ -12,6 +12,7 @@ const brain = require('../services/brain');
 const browser = require('../services/browser');
 const vscode = require('../services/vscode');
 const gh = require('../services/github');
+const builder = require('../services/builder');
 
 const WORKSPACE = process.env.WORKSPACE || '/tmp/agent-workspace';
 
@@ -157,6 +158,11 @@ const T = {
   },
 
   // ── 5. WEB / BROWSER ─────────────────────────────────
+  build_project: async ({ idea, private: priv }, ctx) => {
+    const r = await builder.buildProject(idea, ctx?.model || 'anthropic/claude-3.5-sonnet', { private: priv });
+    return `${r.log.join('\n')}\n\nRepo: ${r.repo}`;
+  },
+
   analyze_image: async ({ image_url, question }, ctx) => {
     const { chat } = require('../services/openrouter');
     const model = 'google/gemini-2.0-flash-exp:free';
@@ -501,6 +507,7 @@ function getToolDefs() {
     fn('search_in_files', '🔎 Search text across files (like grep)', P({ pattern: S('Search pattern (regex ok)'), path: S('Directory to search'), file_ext: S('File extension to search (e.g. js, py, ts)') }, ['pattern'])),
 
     // WEB
+    fn('build_project', '🚀 Design and ship a COMPLETE new open-source project (architecture, all files, README, tests, CI, LICENSE) to a brand new GitHub repo in one call', P({ idea: S('Description of the project to build'), private: B('Make repo private') }, ['idea'])),
     fn('analyze_image', '🖼️ Analyze/describe an image from a URL using vision AI', P({ image_url: S('Public image URL'), question: S('What to ask about the image') }, ['image_url'])),
     fn('web_search', '🌐 Search the web for information, docs, solutions', P({ query: S('Search query - be specific for better results'), num_results: N('Number of results (default 8)') }, ['query'])),
     fn('fetch_url', '🌐 Fetch and read any URL - websites, docs, APIs, GitHub raw files', P({ url: S('Full URL to fetch') }, ['url'])),

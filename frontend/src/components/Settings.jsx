@@ -28,8 +28,32 @@ export default function Settings() {
     </div>
   )
 
+  const [rot, setRot] = useState({ gh1:'',gh2:'',gh3:'', or1:'',or2:'',or3:'', pool:'' })
+  const [rotStatus, setRotStatus] = useState(null)
+
+  useEffect(() => { fetch(`${API}/rotation/status`).then(r=>r.json()).then(setRotStatus).catch(()=>{}) }, [])
+
+  const saveRotation = async () => {
+    await fetch(`${API}/rotation/openrouter-keys`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ keys: [rot.or1,rot.or2,rot.or3] }) })
+    if (rot.pool) await fetch(`${API}/rotation/model-pool`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ models: rot.pool.split(',').map(m=>m.trim()) }) })
+    const st = await fetch(`${API}/rotation/status`).then(r=>r.json())
+    setRotStatus(st); notify('✅ Rotation pools saved', 'success')
+  }
+
   return (
     <div className="settings-layout">
+      <div className="panel">
+        <div className="panel-title">🔁 Key & Model Rotation</div>
+        <p style={{fontSize:12,color:'var(--text2)',marginBottom:10}}>Add up to 3 keys each. Auto-rotates on rate-limit/auth errors. {rotStatus && `Active OpenRouter key: #${rotStatus.openrouterActive+1}/${rotStatus.openrouterKeys||0}`}</p>
+        <div className="ss"><h4>OpenRouter Keys</h4>
+          {[1,2,3].map(n => <input key={n} className="input" style={{marginBottom:6}} type="password" placeholder={`OpenRouter key #${n}`} value={rot[`or${n}`]} onChange={e=>setRot({...rot,[`or${n}`]:e.target.value})} />)}
+        </div>
+        <div className="ss"><h4>Model Rotation Pool (optional, comma-separated)</h4>
+          <input className="input" placeholder="anthropic/claude-3.5-sonnet, deepseek/deepseek-r1:free, ..." value={rot.pool} onChange={e=>setRot({...rot,pool:e.target.value})} />
+        </div>
+        <button className="btn btn-primary" onClick={saveRotation}>💾 Save Rotation Pools</button>
+      </div>
+
       <div className="panel">
         <div className="panel-title">⚙️ Settings</div>
         <div className="ss"><h4>🔑 API Keys</h4>

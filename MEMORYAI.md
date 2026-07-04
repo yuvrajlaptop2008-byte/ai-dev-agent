@@ -38,6 +38,16 @@
 - Only output: files/commands the user must act on, or direct answers to direct questions.
 - Minimize tokens always — this is a standing rule for every future turn in this project.
 - SETUP.md is the canonical setup guide — point there instead of re-explaining setup.
+- Never explain reasoning/thinking in visible output either — reason internally, act, stay silent.
+- User does not read explanations of completed work — only ask if a decision truly needs their input (e.g. missing required key).
+- Always maintain and consult this file instead of re-scanning the repo — this is the token-saving mechanism the user explicitly asked for.
+
+## v8 additions
+- rotation.js/routes/rotation.js: OpenRouter-only key rotation (GitHub stays single-token — user explicitly said no GitHub rotation). Up to 3 OpenRouter keys, auto-rotates on 401/429 in openrouter.js chat(). Optional model-pool rotation via nextModel().
+- services/builder.js + routes/builder.js: architect() designs a full new OSS project (JSON file list) from a one-line idea, generateFile() writes production-quality content per file (3 files concurrently), buildProject() creates a brand new GitHub repo and populates it end-to-end, tags topics, saves to brain memory under 'built_projects'. strengthenProfile() audits a user's repos for gaps (missing description/docs).
+- tools/index.js: new agent tool `build_project` — ARIA can autonomously ship a full new open-source repo mid-task.
+- Settings UI: Rotation panel (3x OpenRouter key inputs + model pool CSV) wired to /api/rotation/*.
+- Contribute UI: "Build New OSS Project" action + idea input field, posts to /api/builder/build.
 
 ## v6 additions
 - SERPER_API_KEY (optional, .env) → real Google search via serper.dev, primary in browser.js search(), falls back to DDG scraping if unset/fails

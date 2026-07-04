@@ -1,6 +1,7 @@
 const axios = require('axios');
 const BASE = 'https://openrouter.ai/api/v1';
-const getKey = () => process.env.OPENROUTER_API_KEY;
+const rotation = require('./rotation');
+const getKey = () => rotation.getOpenrouterKey() || process.env.OPENROUTER_API_KEY;
 const { PAID_MODELS: SEED_PAID, FREE_MODELS: SEED_FREE } = require('./model_catalog');
 let _cache = { all: [], free: SEED_FREE, ts: 0 };
 const CACHE_TTL = 6*60*60*1000;
@@ -144,6 +145,10 @@ async function chat(messages, model, tools, systemPrompt, opts = {}) {
     return r.data;
   } catch (e) {
     const status = e.response?.status;
+    if ((status === 401 || status === 429) && rotation.status().openrouterKeys > 1 && !opts._keyRotated) {
+      rotation.rotateOpenrouter();
+      return chat(messages, model, tools, systemPrompt, { ...opts, _keyRotated: true });
+    }
     if ((status === 429 || status === 502 || status === 503) && !opts._retried) {
       for (const fb of FALLBACK_CHAIN) {
         if (fb === model) continue;
@@ -187,4 +192,4 @@ async function streamChat(data, onChunk, onDone, onError) {
   } catch (e) { if (onError) onError(e); else throw e; }
 }
 
-module.exports = { chat, streamChat, getModels, getFreeModels, getCacheInfo, MODEL_PRESETS, FREE_MODELS: SEED_FREE, selectModel };
+module.exports = { chat, streamChat, getModels, getFreeModels, getCacheInfo, MODEL_PRESETS, FREE_MODELS: SEED_FREE, selectModel, rotation };
