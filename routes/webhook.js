@@ -20,13 +20,25 @@ router.post('/', async (req, res) => {
   res.json({ ok: true }); // ack immediately
 
   try {
+    const owner = body.repository?.owner?.login;
+    const repo = body.repository?.name;
+
     if (event === 'issues' && body.action === 'opened') {
-      const { owner, name: repo } = body.repository.owner ? { owner: body.repository.owner.login, name: body.repository.name } : {};
       await gh.addLabels(owner, repo, body.issue.number, ['needs-triage']).catch(() => {});
     }
     if (event === 'issues' && body.action === 'labeled' && body.label?.name === 'ai-fix') {
-      const owner = body.repository.owner.login, repo = body.repository.name;
       contributor.solveIssue(owner, repo, body.issue.number, 'anthropic/claude-3.5-sonnet').catch(() => {});
+    }
+    if (event === 'pull_request' && body.action === 'opened') {
+      const diff = await gh.getPRDiff(owner, repo, body.pull_request.number).catch(() => null);
+      if (diff) {
+        const brain = require('../services/brain');
+        const review = await brain.analyzeCode(String(diff).slice(0, 6000), 'diff', 'Review this PR diff for bugs, security issues, and code quality. Be concise.', 'anthropic/claude-3.5-sonnet');
+        await gh.reviewPR(owner, repo, body.pull_request.number, `🤖 ARIA auto-review:\n\n${review.slice(0, 3000)}`, 'COMMENT').catch(() => {});
+      }
+    }
+    if (event === 'check_run' && body.check_run?.conclusion === 'failure') {
+      await gh.commentIssue(owner, repo, body.check_run.pull_requests?.[0]?.number, `⚠️ CI check "${body.check_run.name}" failed. Label this PR \`ai-fix\` to have ARIA investigate.`).catch(() => {});
     }
   } catch (e) { console.error('webhook error', e.message); }
 });

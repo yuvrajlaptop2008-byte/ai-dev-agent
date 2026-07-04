@@ -148,28 +148,42 @@ JSON only.`;
     addLog(`💬 Commented on issue`);
   }
 
+  await logContribution(owner, repo, { type: 'solve-issue', issueNumber, prUrl, title: fix.pr_title });
   return { log, fix, prUrl, issue };
+}
+
+async function logContribution(owner, repo, entry) {
+  const key = `${owner}/${repo}`;
+  const existing = await brain.getMemory(key, 'contributions') || { value: [] };
+  const list = Array.isArray(existing.value) ? existing.value : [];
+  list.unshift({ ...entry, ts: new Date().toISOString() });
+  await brain.saveMemory(key, list.slice(0, 30), 'contributions');
+}
+
+async function getContributionHistory(owner, repo) {
+  const key = `${owner}/${repo}`;
+  const existing = await brain.getMemory(key, 'contributions');
+  return existing?.value || [];
 }
 
 // ── AUTO-LABEL ISSUES ────────────────────────────────────
 async function autoLabelIssues(owner, repo, model) {
   const issues = await gh.listIssues(owner, repo, 'open');
   const unlabeled = issues.filter(i => i.labels.length === 0).slice(0, 10);
-  
-  for (const issue of unlabeled) {
+
+  await gh.batch(unlabeled, async (issue) => {
     const prompt = `Label this GitHub issue with 1-3 appropriate labels.
 Title: ${issue.title}
 Body: ${issue.body?.slice(0, 500) || ''}
 Available: bug, enhancement, documentation, question, good first issue, help wanted, invalid, duplicate, wontfix
 Return JSON: {"labels": ["label1", "label2"]} only.`;
-    
     const r = await chat([{ role: 'user', content: prompt }], model || 'meta-llama/llama-3.3-70b-instruct:free');
-    try {
-      const txt = r.choices[0].message.content.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
-      const { labels } = JSON.parse(txt);
-      await gh.addLabels(owner, repo, issue.number, labels);
-    } catch {}
-  }
+    const txt = r.choices[0].message.content.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
+    const { labels } = JSON.parse(txt);
+    return gh.addLabels(owner, repo, issue.number, labels);
+  }, { concurrency: 3, delayMs: 300 });
+
+  await logContribution(owner, repo, { type: 'auto-label', count: unlabeled.length });
   return `Labeled ${unlabeled.length} issues`;
 }
 
@@ -198,6 +212,7 @@ Return ONLY the markdown content.`;
   try { const f = await gh.getFile(owner, repo, 'README.md'); sha = f.sha; } catch {}
   
   await gh.putFile(owner, repo, 'README.md', newReadme, 'docs: improve README with comprehensive documentation', sha);
+  await logContribution(owner, repo, { type: 'improve-readme' });
   return { message: '✅ README improved', preview: newReadme.slice(0, 500) };
 }
 
@@ -255,6 +270,7 @@ Open a [Discussion](https://github.com/${owner}/${repoInfo.name}/discussions) or
   let sha;
   try { const f = await gh.getFile(owner, repo, 'CONTRIBUTING.md'); sha = f.sha; } catch {}
   await gh.putFile(owner, repo, 'CONTRIBUTING.md', content, 'docs: add CONTRIBUTING.md', sha);
+  await logContribution(owner, repo, { type: 'add-contributing' });
   return '✅ CONTRIBUTING.md added';
 }
 
@@ -305,6 +321,7 @@ labels: enhancement
 
   await gh.putFile(owner, repo, '.github/ISSUE_TEMPLATE/bug_report.md', bugTemplate, 'ci: add bug report template').catch(()=>{});
   await gh.putFile(owner, repo, '.github/ISSUE_TEMPLATE/feature_request.md', featureTemplate, 'ci: add feature request template').catch(()=>{});
+  await logContribution(owner, repo, { type: 'add-templates' });
   return '✅ Issue templates added';
 }
 
@@ -382,6 +399,7 @@ jobs:
   let sha;
   try { const f = await gh.getFile(owner, repo, '.github/workflows/ci.yml'); sha = f.sha; } catch {}
   await gh.putFile(owner, repo, '.github/workflows/ci.yml', workflow, 'ci: add GitHub Actions CI workflow', sha);
+  await logContribution(owner, repo, { type: 'add-ci' });
   return '✅ CI workflow added';
 }
 
@@ -418,4 +436,4 @@ Return ONLY the test file content.`;
   return results.join('\n');
 }
 
-module.exports = { findGoodIssues, solveIssue, autoLabelIssues, improveReadme, addContributing, addIssueTemplates, addCIWorkflow, writeTests };
+module.exports = { findGoodIssues, solveIssue, autoLabelIssues, improveReadme, addContributing, addIssueTemplates, addCIWorkflow, writeTests, getContributionHistory, logContribution };

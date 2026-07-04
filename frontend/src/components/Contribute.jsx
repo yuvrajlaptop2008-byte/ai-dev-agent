@@ -1,4 +1,4 @@
-import { useState, useContext } from 'react'
+import { useState, useContext, useEffect } from 'react'
 import { API, AppCtx } from '../App'
 
 const ACTIONS = [
@@ -20,6 +20,12 @@ export default function Contribute() {
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(null)
   const [log, setLog] = useState([])
+  const [history, setHistory] = useState([])
+
+  useEffect(() => {
+    const { owner, repo } = repoCtx
+    if (owner && repo) fetch(`${API}/contributor/history/${owner}/${repo}`).then(r=>r.json()).then(setHistory).catch(()=>{})
+  }, [repoCtx.owner, repoCtx.repo])
 
   const run = async (actionId) => {
     const { owner, repo } = repoCtx
@@ -40,6 +46,8 @@ export default function Contribute() {
         setResult(d)
         if (d.log) setLog(d.log)
         notify('✅ Done!', 'success')
+        const { owner, repo } = repoCtx
+        fetch(`${API}/contributor/history/${owner}/${repo}`).then(r=>r.json()).then(setHistory).catch(()=>{})
       }
     } catch (e) { notify(`❌ ${e.message}`, 'error'); setResult(e.message) }
     setLoading(null)
@@ -77,6 +85,16 @@ export default function Contribute() {
       </div>
 
       <div className="contrib-right">
+        {history.length > 0 && (
+          <div className="panel" style={{ marginBottom: 12 }}>
+            <div className="panel-title">📜 Contribution History ({history.length})</div>
+            <div className="contrib-log">
+              {history.map((h,i) => (
+                <div key={i} className="log-line">{h.ts?.slice(0,10)} · {h.type}{h.prUrl?` · `:''}{h.prUrl && <a href={h.prUrl} target="_blank">PR</a>}</div>
+              ))}
+            </div>
+          </div>
+        )}
         {log.length > 0 && (
           <div className="panel" style={{ marginBottom: 12 }}>
             <div className="panel-title">📋 Log</div>

@@ -201,6 +201,18 @@ async function getCommit(owner, repo, sha) {
   return data;
 }
 
+// ── BATCH - runs many GitHub ops safely without hitting rate limits ──
+async function batch(items, fn, { concurrency = 3, delayMs = 250 } = {}) {
+  const results = [];
+  for (let i = 0; i < items.length; i += concurrency) {
+    const slice = items.slice(i, i + concurrency);
+    const chunk = await Promise.allSettled(slice.map(fn));
+    results.push(...chunk);
+    if (i + concurrency < items.length) await new Promise(r => setTimeout(r, delayMs));
+  }
+  return results.map((r, i) => r.status === 'fulfilled' ? r.value : { error: r.reason?.message, item: items[i] });
+}
+
 module.exports = {
   getIssue, listIssues, createIssue, updateIssue, closeIssue, commentIssue, addLabels, assignIssue,
   listPRs, createPR, mergePR, getPRDiff, reviewPR,
@@ -210,5 +222,5 @@ module.exports = {
   cloneRepo, gitOps,
   listWorkflows, listRuns, triggerWorkflow,
   listReleases, createRelease,
-  listCommits, getCommit
+  listCommits, getCommit, batch
 };

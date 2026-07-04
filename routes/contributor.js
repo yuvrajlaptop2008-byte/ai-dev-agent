@@ -10,5 +10,6 @@ router.post('/add-contributing', h(req => c.addContributing(req.body.owner, req.
 router.post('/add-templates', h(req => c.addIssueTemplates(req.body.owner, req.body.repo)));
 router.post('/add-ci', h(req => c.addCIWorkflow(req.body.owner, req.body.repo, req.body.model)));
 router.post('/write-tests', h(req => c.writeTests(req.body.owner, req.body.repo, req.body.model)));
+router.get('/history/:owner/:repo', h(req => c.getContributionHistory(req.params.owner, req.params.repo)));
 
 module.exports = router;

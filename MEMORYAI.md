@@ -65,11 +65,15 @@
 - browser.js: in-memory cache (15min TTL, cap 100) for deepResearch
 - Frontend Agent tab: Deep/Fast mode toggle buttons
 
+## v9 additions
+- contributor.js: logContribution()/getContributionHistory() — every action (solve-issue, auto-label, improve-readme, add-contributing, add-templates, add-ci) logged to brain memory under category 'contributions', keyed by owner/repo, capped 30 entries
+- routes/contributor.js: GET /history/:owner/:repo
+- Contribute.jsx: history panel auto-loads on repo change, refreshes after each action
+- github.js: batch(items, fn, {concurrency, delayMs}) — safe rate-limited bulk ops, used in autoLabelIssues
+- webhook.js expanded: pull_request.opened → auto AI code review posted as PR comment; check_run failure → comments suggesting ai-fix label
+
 ## Pending / Ideas Not Yet Built
 - WebSocket reconnect/backoff UI indicator
-- Per-repo contribution history log
-- Rate-limit backoff for GitHub API on bulk ops
-- Webhook: expand beyond issues (PR review auto-comment, push CI status)
 
 ## v5 additions
 - package.json engines: node >=18; run.sh checks node major version, exits with install link if <18
