@@ -23,6 +23,7 @@ app.use('/api/files', require('./routes/files'));
 app.use('/api/contributor', require('./routes/contributor'));
 app.use('/api/memory', require('./routes/memory'));
 app.use('/api/brain', require('./routes/brain'));
+app.use('/api/webhook', require('./routes/webhook'));
 
 // Serve frontend
 const distPath = path.join(__dirname, 'frontend/dist');

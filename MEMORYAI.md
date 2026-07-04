@@ -32,10 +32,18 @@
 - GITHUB_TOKEN, OPENROUTER_API_KEY — set in /home/claude/ai-dev-agent/.env (gitignored)
 
 ## Pending / Ideas Not Yet Built
-- Code-split frontend bundle (currently 1MB+, vite warns)
 - WebSocket reconnect/backoff UI indicator
 - Per-repo contribution history log
 - Rate-limit backoff for GitHub API on bulk ops
+- Webhook: expand beyond issues (PR review auto-comment, push CI status)
+
+## v5 additions
+- package.json engines: node >=18; run.sh checks node major version, exits with install link if <18
+- Dockerfile: node:22-alpine
+- CI matrix: node 18/20/22
+- vite.config.js: manualChunks (vendor, markdown) — fixes bundle-size warning
+- routes/webhook.js: POST /api/webhook — GitHub webhook receiver. issues.opened → auto-label needs-triage. issues.labeled with label ai-fix → auto-runs contributor.solveIssue. HMAC verify via GITHUB_WEBHOOK_SECRET env (optional)
+- To activate: repo Settings → Webhooks → Payload URL https://your-host/api/webhook, json, event: Issues
 
 ## Workflow For Future Requests
 1. Read this file only — don't `ls`/`view` the whole repo again
