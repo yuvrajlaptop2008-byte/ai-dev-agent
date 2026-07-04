@@ -39,6 +39,12 @@
 - Minimize tokens always — this is a standing rule for every future turn in this project.
 - SETUP.md is the canonical setup guide — point there instead of re-explaining setup.
 
+## v6 additions
+- SERPER_API_KEY (optional, .env) → real Google search via serper.dev, primary in browser.js search(), falls back to DDG scraping if unset/fails
+- chat() in openrouter.js now auto-retries on 429/502/503 through FALLBACK_CHAIN (claude-3.5-sonnet → llama-3.3-70b-free → deepseek-v3-free)
+- New tool: analyze_image (vision, uses gemini-2.0-flash-exp:free)
+- .env.example updated with SERPER_API_KEY, GITHUB_WEBHOOK_SECRET
+
 ## Pending / Ideas Not Yet Built
 - WebSocket reconnect/backoff UI indicator
 - Per-repo contribution history log

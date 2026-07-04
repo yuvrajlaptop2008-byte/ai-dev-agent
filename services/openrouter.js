@@ -125,13 +125,26 @@ async function getModels(force) {
 function getFreeModels() { return _cache.free.length ? _cache.free : SEED_FREE; }
 function getCacheInfo() { return { count: _cache.all.length, freeCount: getFreeModels().length, lastRefresh: _cache.ts ? new Date(_cache.ts).toISOString() : null }; }
 
+const FALLBACK_CHAIN = ['anthropic/claude-3.5-sonnet', 'meta-llama/llama-3.3-70b-instruct:free', 'deepseek/deepseek-chat-v3-0324:free'];
+
 async function chat(messages, model, tools, systemPrompt, opts = {}) {
   model = model || 'anthropic/claude-3.5-sonnet';
   const msgs = systemPrompt ? [{ role: 'system', content: systemPrompt }, ...messages] : messages;
   const body = { model, messages: msgs, max_tokens: opts.max_tokens || 16000, temperature: opts.temperature ?? 0.1 };
   if (tools?.length) { body.tools = tools; body.tool_choice = 'auto'; }
-  const r = await axios.post(`${BASE}/chat/completions`, body, { headers: HEADERS(), timeout: 120000 });
-  return r.data;
+  try {
+    const r = await axios.post(`${BASE}/chat/completions`, body, { headers: HEADERS(), timeout: 120000 });
+    return r.data;
+  } catch (e) {
+    const status = e.response?.status;
+    if ((status === 429 || status === 502 || status === 503) && !opts._retried) {
+      for (const fb of FALLBACK_CHAIN) {
+        if (fb === model) continue;
+        try { return await chat(messages, fb, tools, systemPrompt, { ...opts, _retried: true }); } catch {}
+      }
+    }
+    throw e;
+  }
 }
 
 async function streamChat(data, onChunk, onDone, onError) {

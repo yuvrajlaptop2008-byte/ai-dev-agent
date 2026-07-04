@@ -149,6 +149,13 @@ const T = {
   },
 
   // ── 5. WEB / BROWSER ─────────────────────────────────
+  analyze_image: async ({ image_url, question }, ctx) => {
+    const { chat } = require('../services/openrouter');
+    const model = 'google/gemini-2.0-flash-exp:free';
+    const r = await chat([{ role: 'user', content: [{ type: 'text', text: question || 'Describe this image in detail.' }, { type: 'image_url', image_url: { url: image_url } }] }], model);
+    return r.choices[0].message.content;
+  },
+
   web_search: async ({ query, num_results }) => {
     const results = await browser.search(query, num_results || 8);
     if (!results.length) return 'No search results found';
@@ -486,6 +493,7 @@ function getToolDefs() {
     fn('search_in_files', '🔎 Search text across files (like grep)', P({ pattern: S('Search pattern (regex ok)'), path: S('Directory to search'), file_ext: S('File extension to search (e.g. js, py, ts)') }, ['pattern'])),
 
     // WEB
+    fn('analyze_image', '🖼️ Analyze/describe an image from a URL using vision AI', P({ image_url: S('Public image URL'), question: S('What to ask about the image') }, ['image_url'])),
     fn('web_search', '🌐 Search the web for information, docs, solutions', P({ query: S('Search query - be specific for better results'), num_results: N('Number of results (default 8)') }, ['query'])),
     fn('fetch_url', '🌐 Fetch and read any URL - websites, docs, APIs, GitHub raw files', P({ url: S('Full URL to fetch') }, ['url'])),
     fn('deep_research', '🔬 Deep multi-source research on a topic - searches + reads multiple pages and synthesizes findings', P({ topic: S('Topic to research thoroughly'), depth: N('Research depth 1-3 (default 2)') }, ['topic'])),

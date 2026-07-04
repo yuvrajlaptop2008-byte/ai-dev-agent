@@ -66,6 +66,19 @@ async function fetchPage(url, options = {}) {
 async function search(query, num = 8) {
   const results = [];
 
+  // 0. Serper.dev (real Google results) - primary if key set
+  const serperKey = process.env.SERPER_API_KEY;
+  if (serperKey) {
+    try {
+      const r = await axios.post('https://google.serper.dev/search', { q: query, num }, {
+        headers: { 'X-API-KEY': serperKey, 'Content-Type': 'application/json' }, timeout: 10000
+      });
+      if (r.data.answerBox) results.push({ source: 'Google-Answer', title: r.data.answerBox.title || 'Answer', snippet: r.data.answerBox.answer || r.data.answerBox.snippet, url: r.data.answerBox.link || '' });
+      (r.data.organic || []).forEach(o => results.push({ source: 'Google', title: o.title, snippet: o.snippet, url: o.link }));
+      if (results.length) return results.slice(0, num);
+    } catch {}
+  }
+
   // 1. DuckDuckGo instant answers
   try {
     const r = await axios.get('https://api.duckduckgo.com/', {
