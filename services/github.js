@@ -123,6 +123,38 @@ async function createRepo(name, description = '', isPrivate = false) {
   const { data } = await getOctokit().repos.createForAuthenticatedUser({ name, description, private: isPrivate, auto_init: true });
   return data;
 }
+async function deleteRepo(owner, repo) {
+  return getOctokit().repos.delete({ owner, repo });
+}
+async function updateRepoSettings(owner, repo, settings) {
+  const { data } = await getOctokit().repos.update({ owner, repo, ...settings });
+  return data;
+}
+async function addCollaborator(owner, repo, username, permission = 'push') {
+  return getOctokit().repos.addCollaborator({ owner, repo, username, permission });
+}
+async function removeCollaborator(owner, repo, username) {
+  return getOctokit().repos.removeCollaborator({ owner, repo, username });
+}
+async function getAuthenticatedUser() {
+  const { data } = await getOctokit().users.getAuthenticated();
+  return data;
+}
+async function listMyRepos(opts = {}) {
+  const { data } = await getOctokit().repos.listForAuthenticatedUser({ per_page: 100, sort: 'updated', ...opts });
+  return data;
+}
+async function transferRepo(owner, repo, newOwner) {
+  return getOctokit().repos.transfer({ owner, repo, new_owner: newOwner });
+}
+async function archiveRepo(owner, repo, archived = true) {
+  const { data } = await getOctokit().repos.update({ owner, repo, archived });
+  return data;
+}
+async function setRepoTopics(owner, repo, topics) {
+  const { data } = await getOctokit().repos.replaceAllTopics({ owner, repo, names: topics });
+  return data;
+}
 async function forkRepo(owner, repo) {
   const { data } = await getOctokit().repos.createFork({ owner, repo });
   return data;
@@ -219,6 +251,7 @@ module.exports = {
   getFile, putFile, deleteFile, listContents,
   listBranches, createBranch, deleteBranch,
   getUserRepos, getRepo, createRepo, forkRepo, starRepo, searchCode, searchRepos,
+  deleteRepo, updateRepoSettings, addCollaborator, removeCollaborator, getAuthenticatedUser, listMyRepos, transferRepo, archiveRepo, setRepoTopics,
   cloneRepo, gitOps,
   listWorkflows, listRuns, triggerWorkflow,
   listReleases, createRelease,

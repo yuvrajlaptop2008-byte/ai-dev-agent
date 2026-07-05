@@ -33,7 +33,7 @@ const READ_ONLY_TOOLS = new Set([
   'search_npm','search_pypi','fetch_github_readme','fetch_docs','fetch_api','analyze_image',
   'github_get_issue','github_list_issues','github_get_file','github_list_files','github_list_branches',
   'github_list_prs','github_get_repo','github_search_code','github_search_repos','github_list_commits',
-  'github_list_workflows','github_workflow_runs','recall','search_memory','analyze_code','vscode_list_extensions'
+  'github_list_workflows','github_workflow_runs','recall','search_memory','analyze_code','vscode_list_extensions','github_whoami','github_list_my_repos'
 ]);
 
 const T = {
@@ -46,22 +46,22 @@ const T = {
   },
 
   deep_think: async ({ problem, context }, ctx) => {
-    return brain.deepThink(problem, ctx?.model || 'anthropic/claude-3.5-sonnet', context);
+    return brain.deepThink(problem, ctx?.model || 'meta-llama/llama-3.3-70b-instruct:free', context);
   },
 
   make_plan: async ({ goal, context }, ctx) => {
-    const plan = await brain.createPlan(goal, ctx?.model || 'anthropic/claude-3.5-sonnet', context);
+    const plan = await brain.createPlan(goal, ctx?.model || 'meta-llama/llama-3.3-70b-instruct:free', context);
     await brain.saveMemory(`plan_${Date.now()}`, plan, 'plans');
     return JSON.stringify(plan, null, 2);
   },
 
   decide: async ({ options, criteria }, ctx) => {
-    const d = await brain.decide(options, criteria, ctx?.model || 'anthropic/claude-3.5-sonnet');
+    const d = await brain.decide(options, criteria, ctx?.model || 'meta-llama/llama-3.3-70b-instruct:free');
     return JSON.stringify(d, null, 2);
   },
 
   analyze_code: async ({ code, language, task }, ctx) => {
-    return brain.analyzeCode(code, language, task, ctx?.model || 'anthropic/claude-3.5-sonnet');
+    return brain.analyzeCode(code, language, task, ctx?.model || 'meta-llama/llama-3.3-70b-instruct:free');
   },
 
   // ── 2. MEMORY ─────────────────────────────────────────
@@ -158,8 +158,87 @@ const T = {
   },
 
   // ── 5. WEB / BROWSER ─────────────────────────────────
+  github_whoami: async () => {
+    const u = await gh.getAuthenticatedUser();
+    return `${u.login} | ${u.name || ''} | public repos: ${u.public_repos} | followers: ${u.followers}`;
+  },
+
+  github_list_my_repos: async ({ type }) => {
+    const repos = await gh.listMyRepos(type ? { type } : {});
+    return repos.map(r => `${r.private ? '🔒' : '🌐'} ${r.full_name} ⭐${r.stargazers_count} — ${r.description || ''}`).join('\n');
+  },
+
+  github_delete_repo: async ({ owner, repo }, ctx) => {
+    await gh.deleteRepo(owner || ctx?.owner, repo || ctx?.repo);
+    return `✅ Deleted ${owner || ctx?.owner}/${repo || ctx?.repo}`;
+  },
+
+  github_update_repo: async ({ owner, repo, description, homepage, private: priv, has_issues, has_wiki }, ctx) => {
+    const settings = {};
+    if (description !== undefined) settings.description = description;
+    if (homepage !== undefined) settings.homepage = homepage;
+    if (priv !== undefined) settings.private = priv;
+    if (has_issues !== undefined) settings.has_issues = has_issues;
+    if (has_wiki !== undefined) settings.has_wiki = has_wiki;
+    await gh.updateRepoSettings(owner || ctx?.owner, repo || ctx?.repo, settings);
+    return `✅ Repo settings updated`;
+  },
+
+  github_add_collaborator: async ({ owner, repo, username, permission }, ctx) => {
+    await gh.addCollaborator(owner || ctx?.owner, repo || ctx?.repo, username, permission || 'push');
+    return `✅ ${username} added as collaborator`;
+  },
+
+  github_archive_repo: async ({ owner, repo, archived }, ctx) => {
+    await gh.archiveRepo(owner || ctx?.owner, repo || ctx?.repo, archived !== false);
+    return `✅ Repo ${archived !== false ? 'archived' : 'unarchived'}`;
+  },
+
+  github_set_topics: async ({ owner, repo, topics }, ctx) => {
+    await gh.setRepoTopics(owner || ctx?.owner, repo || ctx?.repo, topics);
+    return `✅ Topics set: ${topics.join(', ')}`;
+  },
+
+  // ── OS / DEVICE ──────────────────────────────────────────
+  create_folder: async ({ path: p }) => {
+    const full = abs(p);
+    await fs.mkdir(full, { recursive: true });
+    return `✅ Folder created: ${full}`;
+  },
+
+  open_url: async ({ url }) => {
+    const cmd = process.platform === 'darwin' ? `open "${url}"` : process.platform === 'win32' ? `start "" "${url}"` : `xdg-open "${url}"`;
+    return sh(`${cmd} 2>&1 || echo "no display available, URL: ${url}"`);
+  },
+
+  open_app: async ({ command }) => {
+    return sh(`(${command} > /tmp/app.log 2>&1 &) ; sleep 1; echo "launched: ${command}"`);
+  },
+
+  browser_automate: async ({ url, actions }) => {
+    try {
+      const puppeteer = require('puppeteer');
+      const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox','--disable-setuid-sandbox'] });
+      const page = await browser.newPage();
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      const results = [];
+      for (const a of (actions || [])) {
+        if (a.type === 'click') await page.click(a.selector).catch(e => results.push(`click failed: ${e.message}`));
+        if (a.type === 'type') await page.type(a.selector, a.text).catch(e => results.push(`type failed: ${e.message}`));
+        if (a.type === 'wait') await new Promise(r => setTimeout(r, a.ms || 1000));
+        if (a.type === 'screenshot') { const buf = await page.screenshot({ encoding: 'base64' }); results.push(`screenshot captured (${buf.length} b64 chars)`); }
+      }
+      const title = await page.title();
+      const content = await page.evaluate(() => document.body.innerText.slice(0, 3000));
+      await browser.close();
+      return `Page: ${title}\n${content}\n${results.join('\n')}`;
+    } catch (e) {
+      return `Browser automation unavailable (${e.message}). Falling back: use fetch_url/web_search instead.`;
+    }
+  },
+
   build_project: async ({ idea, private: priv }, ctx) => {
-    const r = await builder.buildProject(idea, ctx?.model || 'anthropic/claude-3.5-sonnet', { private: priv });
+    const r = await builder.buildProject(idea, ctx?.model || 'meta-llama/llama-3.3-70b-instruct:free', { private: priv });
     return `${r.log.join('\n')}\n\nRepo: ${r.repo}`;
   },
 
@@ -193,7 +272,7 @@ const T = {
       ...report.pageContents.map(p => `[Page: ${p.title}] ${p.content?.slice(0, 1500)}`)
     ];
 
-    const synthesis = await brain_svc.synthesizeResearch(topic, sources, 'anthropic/claude-3.5-sonnet');
+    const synthesis = await brain_svc.synthesizeResearch(topic, sources, 'meta-llama/llama-3.3-70b-instruct:free');
     return `🔍 DEEP RESEARCH: ${topic}\n\n${synthesis}\n\n---\nSources checked: ${report.searchResults.length} search results + ${report.pageContents.length} pages`;
   },
 
@@ -507,6 +586,17 @@ function getToolDefs() {
     fn('search_in_files', '🔎 Search text across files (like grep)', P({ pattern: S('Search pattern (regex ok)'), path: S('Directory to search'), file_ext: S('File extension to search (e.g. js, py, ts)') }, ['pattern'])),
 
     // WEB
+    fn('github_whoami', '🐙 Get authenticated GitHub account info', P({})),
+    fn('github_list_my_repos', '🐙 List all repos in your own GitHub account', P({ type: S('all/owner/member') })),
+    fn('github_delete_repo', '🐙 Permanently delete a repository', P({ owner: S('Owner'), repo: S('Repo') }, ['owner','repo'])),
+    fn('github_update_repo', '🐙 Update repo settings (description, homepage, visibility, features)', P({ owner: S('Owner'), repo: S('Repo'), description: S('New description'), homepage: S('Homepage URL'), private: B('Private'), has_issues: B('Enable issues'), has_wiki: B('Enable wiki') })),
+    fn('github_add_collaborator', '🐙 Add a collaborator to a repo', P({ owner: S('Owner'), repo: S('Repo'), username: S('GitHub username'), permission: S('pull/push/admin') }, ['username'])),
+    fn('github_archive_repo', '🐙 Archive or unarchive a repo', P({ owner: S('Owner'), repo: S('Repo'), archived: B('true=archive, false=unarchive') })),
+    fn('github_set_topics', '🐙 Set repo topics/tags for discoverability', P({ owner: S('Owner'), repo: S('Repo'), topics: A('Topic list') }, ['topics'])),
+    fn('create_folder', '📁 Create a folder/directory', P({ path: S('Folder path') }, ['path'])),
+    fn('open_url', '🌐 Open a URL in the default browser on this machine', P({ url: S('URL to open') }, ['url'])),
+    fn('open_app', '🖥️ Launch an application/command on this machine', P({ command: S('Shell command to launch the app') }, ['command'])),
+    fn('browser_automate', '🌐 Automate a real browser: navigate, click, type, screenshot (requires puppeteer + display; falls back gracefully)', P({ url: S('URL to visit'), actions: A('Array of action objects: {type:click/type/wait/screenshot, selector, text, ms}') }, ['url'])),
     fn('build_project', '🚀 Design and ship a COMPLETE new open-source project (architecture, all files, README, tests, CI, LICENSE) to a brand new GitHub repo in one call', P({ idea: S('Description of the project to build'), private: B('Make repo private') }, ['idea'])),
     fn('analyze_image', '🖼️ Analyze/describe an image from a URL using vision AI', P({ image_url: S('Public image URL'), question: S('What to ask about the image') }, ['image_url'])),
     fn('web_search', '🌐 Search the web for information, docs, solutions', P({ query: S('Search query - be specific for better results'), num_results: N('Number of results (default 8)') }, ['query'])),
@@ -561,7 +651,7 @@ function getToolDefs() {
     fn('vscode_open', '💻 Open file or path in VS Code', P({ path: S('Path to open (file or directory)'), line: N('Line number to jump to') })),
     fn('vscode_open_folder', '💻 Open a folder as VS Code workspace', P({ path: S('Folder path') })),
     fn('vscode_install_extension', '💻 Install a VS Code extension', P({ extension_id: S('Extension ID like esbenp.prettier-vscode') }, ['extension_id'])),
-    fn('vscode_list_extensions', '💻 List installed VS Code extensions', P({})),
+    fn('vscode_list_extensions','github_whoami','github_list_my_repos', '💻 List installed VS Code extensions', P({})),
     fn('vscode_create_workspace', '💻 Create a .code-workspace file', P({ name: S('Workspace name'), folders: A('Array of folder paths') }, ['name'])),
     fn('vscode_setup_project', '💻 Full VS Code project setup: settings, launch, tasks, snippets, workspace', P({ path: S('Project directory'), type: S('Project type: node/python/react/express') })),
     fn('vscode_create_launch', '💻 Create .vscode/launch.json for debugging', P({ path: S('Project directory'), configs: S('Custom launch configs as JSON string') })),

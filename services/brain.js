@@ -230,9 +230,9 @@ function selectBestModel(task, availableModels) {
   const t = task.toLowerCase();
   if (t.includes('code') || t.includes('bug') || t.includes('fix') || t.includes('implement')) return 'deepseek/deepseek-coder-v2';
   if (t.includes('reason') || t.includes('analyze') || t.includes('complex') || t.includes('think')) return 'anthropic/claude-3-opus';
-  if (t.includes('search') || t.includes('research') || t.includes('find')) return 'anthropic/claude-3.5-sonnet';
+  if (t.includes('search') || t.includes('research') || t.includes('find')) return 'meta-llama/llama-3.3-70b-instruct:free';
   if (t.includes('quick') || t.includes('simple') || t.includes('list')) return 'anthropic/claude-3-haiku';
-  return 'anthropic/claude-3.5-sonnet'; // default
+  return 'meta-llama/llama-3.3-70b-instruct:free'; // default
 }
 
 module.exports = { deepThink, createPlan, decide, synthesizeResearch, saveMemory, getMemory, searchMemory, saveTask, getTasks, analyzeCode, selectBestModel };

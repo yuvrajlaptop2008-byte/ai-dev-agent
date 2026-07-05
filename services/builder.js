@@ -53,7 +53,7 @@ async function buildProject(idea, model, opts = {}) {
   const push = (m) => { log.push(m); };
 
   push(`🧠 Architecting: ${idea}`);
-  const plan = await architect(idea, model || 'anthropic/claude-3.5-sonnet');
+  const plan = await architect(idea, model || 'meta-llama/llama-3.3-70b-instruct:free');
   push(`📐 ${plan.name} — ${plan.description} (${plan.files.length} files)`);
 
   push(`🐙 Creating repo ${plan.name}...`);
@@ -66,7 +66,7 @@ async function buildProject(idea, model, opts = {}) {
     const batch = files.slice(i, i + CONCURRENCY);
     await Promise.all(batch.map(async (f) => {
       try {
-        const content = await generateFile(plan.name, plan.description, plan.architecture, f.path, f.purpose, model || 'anthropic/claude-3.5-sonnet');
+        const content = await generateFile(plan.name, plan.description, plan.architecture, f.path, f.purpose, model || 'meta-llama/llama-3.3-70b-instruct:free');
         await gh.putFile(owner, plan.name, f.path, content, `feat: add ${f.path}`);
         push(`✅ ${f.path}`);
       } catch (e) { push(`❌ ${f.path}: ${e.message}`); }

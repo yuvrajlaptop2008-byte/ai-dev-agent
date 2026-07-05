@@ -59,11 +59,17 @@ io.on('connection', (socket) => {
     catch (e) { socket.emit('agent-error', { error: e.message }); }
   });
 
+  socket.on('stop-agent', ({ runId }) => {
+    const { stopAgent } = require('./services/agent');
+    const ok = stopAgent(runId);
+    socket.emit('agent-stop-ack', { runId, ok });
+  });
+
   // Brain tools (direct access)
   socket.on('brain-think', async ({ problem, context, model }) => {
     const brain = require('./services/brain');
     try {
-      const result = await brain.deepThink(problem, model || 'anthropic/claude-3.5-sonnet', context);
+      const result = await brain.deepThink(problem, model || 'meta-llama/llama-3.3-70b-instruct:free', context);
       socket.emit('brain-result', { type: 'think', result });
     } catch (e) { socket.emit('brain-error', e.message); }
   });
@@ -74,7 +80,7 @@ io.on('connection', (socket) => {
     try {
       const report = await browser.deepResearch(topic, depth || 2);
       const sources = [...report.searchResults.map(r => `${r.title}: ${r.snippet}`), ...report.pageContents.map(p => p.content?.slice(0, 1500))];
-      const synthesis = await brain.synthesizeResearch(topic, sources, 'anthropic/claude-3.5-sonnet');
+      const synthesis = await brain.synthesizeResearch(topic, sources, 'meta-llama/llama-3.3-70b-instruct:free');
       socket.emit('brain-result', { type: 'research', result: synthesis, raw: report });
     } catch (e) { socket.emit('brain-error', e.message); }
   });

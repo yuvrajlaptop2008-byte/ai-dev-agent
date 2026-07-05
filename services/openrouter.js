@@ -2,7 +2,7 @@ const axios = require('axios');
 const BASE = 'https://openrouter.ai/api/v1';
 const rotation = require('./rotation');
 const getKey = () => rotation.getOpenrouterKey() || process.env.OPENROUTER_API_KEY;
-const { PAID_MODELS: SEED_PAID, FREE_MODELS: SEED_FREE } = require('./model_catalog');
+const { FREE_MODELS: SEED_FREE } = require('./model_catalog');
 let _cache = { all: [], free: SEED_FREE, ts: 0 };
 const CACHE_TTL = 6*60*60*1000;
 const HEADERS = () => ({
@@ -11,112 +11,41 @@ const HEADERS = () => ({
   'X-Title': 'AI Dev Agent'
 });
 
-// ── ALL FREE MODELS (65) ─────────────────────────────────
-const FREE_MODELS = [
-  "meta-llama/llama-3.1-8b-instruct:free",
-  "meta-llama/llama-3.2-1b-instruct:free",
-  "meta-llama/llama-3.2-3b-instruct:free",
-  "meta-llama/llama-3.2-11b-vision-instruct:free",
-  "meta-llama/llama-3.3-70b-instruct:free",
-  "meta-llama/llama-4-scout:free",
-  "meta-llama/llama-4-maverick:free",
-  "google/gemma-2-9b-it:free",
-  "google/gemma-3-1b-it:free",
-  "google/gemma-3-4b-it:free",
-  "google/gemma-3-12b-it:free",
-  "google/gemma-3-27b-it:free",
-  "google/gemma-3n-e2b-it:free",
-  "google/gemma-3n-e4b-it:free",
-  "google/gemini-2.0-flash-exp:free",
-  "google/gemini-2.5-pro-exp-03-25:free",
-  "mistralai/mistral-7b-instruct:free",
-  "mistralai/mistral-small-3.1-24b-instruct:free",
-  "microsoft/phi-3-mini-128k-instruct:free",
-  "microsoft/phi-3-medium-128k-instruct:free",
-  "microsoft/phi-4:free",
-  "microsoft/phi-4-multimodal-instruct:free",
-  "microsoft/phi-4-reasoning:free",
-  "microsoft/phi-4-reasoning-plus:free",
-  "deepseek/deepseek-r1:free",
-  "deepseek/deepseek-r1-zero:free",
-  "deepseek/deepseek-v3-base:free",
-  "deepseek/deepseek-chat-v3-0324:free",
-  "deepseek/deepseek-prover-v2:free",
-  "qwen/qwen-2.5-7b-instruct:free",
-  "qwen/qwen-2.5-72b-instruct:free",
-  "qwen/qwen-2.5-coder-32b-instruct:free",
-  "qwen/qwen3-0.6b:free",
-  "qwen/qwen3-1.7b:free",
-  "qwen/qwen3-4b:free",
-  "qwen/qwen3-8b:free",
-  "qwen/qwen3-14b:free",
-  "qwen/qwen3-30b-a3b:free",
-  "qwen/qwen3-32b:free",
-  "qwen/qwen3-235b-a22b:free",
-  "qwen/qwq-32b:free",
-  "nvidia/llama-3.1-nemotron-70b-instruct:free",
-  "nvidia/llama-3.1-nemotron-nano-8b-v1:free",
-  "nvidia/llama-3.3-nemotron-super-49b-v1:free",
-  "nvidia/llama-3.1-nemotron-ultra-253b-v1:free",
-  "thudm/glm-4-9b-chat:free",
-  "thudm/glm-z1-32b:free",
-  "thudm/glm-z1-rumination-32b:free",
-  "thudm/glm-4-32b:free",
-  "nousresearch/hermes-3-llama-3.1-8b:free",
-  "nousresearch/deephermes-3-mistral-24b-preview:free",
-  "bytedance-research/ui-tars-72b:free",
-  "moonshotai/kimi-vl-a3b-thinking:free",
-  "open-r1/olympiccoder-32b:free",
-  "arliai/qwq-32b-arliai-rpr-v1:free",
-  "featherless/qwerky-72b:free",
-  "tngtech/deepseek-r1t-chimera:free",
-  "sarvamai/sarvam-m:free",
-  "rekaai/reka-flash-3:free",
-  "mistralai/devstral-small-2505:free",
-  "agentica-org/deepcoder-14b-preview:free",
-  "shisa-ai/shisa-v2-llama3.3-70b:free",
-  "opengvlab/internvl3-14b:free",
-  "opengvlab/internvl3-2b:free",
-  "openrouter/optimus-alpha:free"
+const DEFAULT_MODEL = 'meta-llama/llama-3.3-70b-instruct:free';
+const FALLBACK_CHAIN = [
+  'meta-llama/llama-3.3-70b-instruct:free',
+  'deepseek/deepseek-chat-v3-0324:free',
+  'qwen/qwen-2.5-72b-instruct:free',
+  'google/gemma-3-27b-it:free'
 ];
 
-// ── PRESET GROUPS ────────────────────────────────────────
 const MODEL_PRESETS = {
-  '⚡ claude-3.5-sonnet':   'anthropic/claude-3.5-sonnet',
-  '🔥 claude-3-opus':       'anthropic/claude-3-opus',
-  '💡 gpt-4o':              'openai/gpt-4o',
-  '🚀 gpt-4o-mini':         'openai/gpt-4o-mini',
-  '💎 gemini-pro-1.5':      'google/gemini-pro-1.5',
-  '🆓 deepseek-r1-free':    'deepseek/deepseek-r1:free',
-  '🆓 llama-3.3-70b-free':  'meta-llama/llama-3.3-70b-instruct:free',
-  '🆓 qwen3-235b-free':     'qwen/qwen3-235b-a22b:free',
-  '🆓 gemini-2.0-flash':    'google/gemini-2.0-flash-exp:free',
-  '🆓 gemma-3-27b-free':    'google/gemma-3-27b-it:free',
-  '🆓 deepseek-v3-free':    'deepseek/deepseek-chat-v3-0324:free',
-  '🆓 phi-4-free':          'microsoft/phi-4:free',
-  '🆓 qwq-32b-free':        'qwen/qwq-32b:free',
-  '🔵 codestral':           'mistralai/codestral-latest',
-  '🔵 deepseek-coder-v2':   'deepseek/deepseek-coder-v2',
-  '🔵 qwen-2.5-coder':      'qwen/qwen-2.5-coder-32b-instruct',
-  '⚡ claude-3-haiku':      'anthropic/claude-3-haiku',
-  '🔥 llama-3.1-405b':      'meta-llama/llama-3.1-405b-instruct',
+  '🆓 llama-3.3-70b':   'meta-llama/llama-3.3-70b-instruct:free',
+  '🆓 deepseek-r1':     'deepseek/deepseek-r1:free',
+  '🆓 deepseek-v3':     'deepseek/deepseek-chat-v3-0324:free',
+  '🆓 qwen3-235b':      'qwen/qwen3-235b-a22b:free',
+  '🆓 qwen-2.5-72b':    'qwen/qwen-2.5-72b-instruct:free',
+  '🆓 qwen-2.5-coder':  'qwen/qwen-2.5-coder-32b-instruct:free',
+  '🆓 gemini-2.0-flash':'google/gemini-2.0-flash-exp:free',
+  '🆓 gemma-3-27b':     'google/gemma-3-27b-it:free',
+  '🆓 phi-4':           'microsoft/phi-4:free',
+  '🆓 qwq-32b':         'qwen/qwq-32b:free',
+  '🆓 llama-4-maverick':'meta-llama/llama-4-maverick:free',
 };
 
-// Smart auto-select model by task type
 function selectModel(task) {
-  const t = task.toLowerCase();
+  const t = (task || '').toLowerCase();
   if (t.includes('code') || t.includes('bug') || t.includes('fix') || t.includes('implement')) return 'deepseek/deepseek-r1:free';
   if (t.includes('reason') || t.includes('complex') || t.includes('analyze')) return 'qwen/qwen3-235b-a22b:free';
-  if (t.includes('fast') || t.includes('quick') || t.includes('simple')) return 'meta-llama/llama-3.3-70b-instruct:free';
-  return process.env.DEFAULT_MODEL || 'anthropic/claude-3.5-sonnet';
+  return DEFAULT_MODEL;
 }
 
 async function getModels(force) {
   if (!force && _cache.all.length && Date.now() - _cache.ts < CACHE_TTL) return _cache.all;
   try {
     const r = await axios.get(`${BASE}/models`, { headers: HEADERS(), timeout: 12000 });
-    const list = r.data.data.sort((a,b) => a.id > b.id ? 1 : -1);
-    const free = list.filter(m => m.id.includes(':free') || (m.pricing && +m.pricing.prompt === 0 && +m.pricing.completion === 0)).map(m => m.id);
+    const list = r.data.data.filter(m => m.id.includes(':free') || (m.pricing && +m.pricing.prompt === 0 && +m.pricing.completion === 0)).sort((a,b) => a.id > b.id ? 1 : -1);
+    const free = list.map(m => m.id);
     _cache = { all: list, free: free.length ? free : SEED_FREE, ts: Date.now() };
     return list;
   } catch {
@@ -126,19 +55,16 @@ async function getModels(force) {
 function getFreeModels() { return _cache.free.length ? _cache.free : SEED_FREE; }
 function getCacheInfo() { return { count: _cache.all.length, freeCount: getFreeModels().length, lastRefresh: _cache.ts ? new Date(_cache.ts).toISOString() : null }; }
 
-const FALLBACK_CHAIN = ['anthropic/claude-3.5-sonnet', 'meta-llama/llama-3.3-70b-instruct:free', 'deepseek/deepseek-chat-v3-0324:free'];
+function normalizeModel(model) {
+  if (!model || model.startsWith('anthropic/') || model.startsWith('openai/') || model.startsWith('mistralai/codestral') || model.startsWith('deepseek/deepseek-coder-v2') || model.startsWith('x-ai/') || model.startsWith('cohere/') || model.startsWith('perplexity/')) return DEFAULT_MODEL;
+  return model;
+}
 
 async function chat(messages, model, tools, systemPrompt, opts = {}) {
-  model = model || 'anthropic/claude-3.5-sonnet';
-  let sysMsg = null;
-  if (systemPrompt) {
-    // Anthropic prompt caching: mark long static system prompts cacheable (cuts cost+latency on repeated calls)
-    sysMsg = model.startsWith('anthropic/') && systemPrompt.length > 1000
-      ? { role: 'system', content: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }] }
-      : { role: 'system', content: systemPrompt };
-  }
+  model = normalizeModel(model);
+  const sysMsg = systemPrompt ? { role: 'system', content: systemPrompt } : null;
   const msgs = sysMsg ? [sysMsg, ...messages] : messages;
-  const body = { model, messages: msgs, max_tokens: opts.max_tokens || 16000, temperature: opts.temperature ?? 0.1 };
+  const body = { model, messages: msgs, max_tokens: opts.max_tokens || 8000, temperature: opts.temperature ?? 0.2 };
   if (tools?.length) { body.tools = tools; body.tool_choice = 'auto'; }
   try {
     const r = await axios.post(`${BASE}/chat/completions`, body, { headers: HEADERS(), timeout: 120000 });
@@ -149,7 +75,7 @@ async function chat(messages, model, tools, systemPrompt, opts = {}) {
       rotation.rotateOpenrouter();
       return chat(messages, model, tools, systemPrompt, { ...opts, _keyRotated: true });
     }
-    if ((status === 429 || status === 502 || status === 503) && !opts._retried) {
+    if ((status === 404 || status === 429 || status === 502 || status === 503) && !opts._retried) {
       for (const fb of FALLBACK_CHAIN) {
         if (fb === model) continue;
         try { return await chat(messages, fb, tools, systemPrompt, { ...opts, _retried: true }); } catch {}
@@ -160,36 +86,48 @@ async function chat(messages, model, tools, systemPrompt, opts = {}) {
 }
 
 async function streamChat(data, onChunk, onDone, onError) {
-  const { messages, model, systemPrompt, tools } = data;
+  const { messages, systemPrompt, tools } = data;
+  let model = normalizeModel(data.model);
   const msgs = systemPrompt ? [{ role: 'system', content: systemPrompt }, ...messages] : messages;
-  const body = { model: model || 'anthropic/claude-3.5-sonnet', messages: msgs, stream: true, max_tokens: 16000, temperature: 0.1 };
+  const body = { model, messages: msgs, stream: true, max_tokens: 8000, temperature: 0.2 };
   if (tools?.length) { body.tools = tools; body.tool_choice = 'auto'; }
-  try {
-    const r = await axios.post(`${BASE}/chat/completions`, body, { headers: HEADERS(), responseType: 'stream', timeout: 120000 });
-    let buf = '', tcs = [];
-    r.data.on('data', chunk => {
-      buf += chunk.toString();
-      const lines = buf.split('\n'); buf = lines.pop();
-      for (const ln of lines) {
-        if (!ln.startsWith('data: ') || ln === 'data: [DONE]') continue;
-        try {
-          const j = JSON.parse(ln.slice(6)), delta = j.choices?.[0]?.delta;
-          if (!delta) continue;
-          if (delta.content) onChunk({ type: 'text', content: delta.content });
-          if (delta.tool_calls) for (const tc of delta.tool_calls) {
-            if (tc.index !== undefined) {
-              if (!tcs[tc.index]) tcs[tc.index] = { id:'', type:'function', function:{name:'',arguments:''} };
-              if (tc.id) tcs[tc.index].id = tc.id;
-              if (tc.function?.name) tcs[tc.index].function.name += tc.function.name;
-              if (tc.function?.arguments) tcs[tc.index].function.arguments += tc.function.arguments;
+
+  const attempt = async (mdl, isRetry) => {
+    body.model = mdl;
+    try {
+      const r = await axios.post(`${BASE}/chat/completions`, body, { headers: HEADERS(), responseType: 'stream', timeout: 120000 });
+      let buf = '', tcs = [];
+      r.data.on('data', chunk => {
+        buf += chunk.toString();
+        const lines = buf.split('\n'); buf = lines.pop();
+        for (const ln of lines) {
+          if (!ln.startsWith('data: ') || ln === 'data: [DONE]') continue;
+          try {
+            const j = JSON.parse(ln.slice(6)), delta = j.choices?.[0]?.delta;
+            if (!delta) continue;
+            if (delta.content) onChunk({ type: 'text', content: delta.content });
+            if (delta.tool_calls) for (const tc of delta.tool_calls) {
+              if (tc.index !== undefined) {
+                if (!tcs[tc.index]) tcs[tc.index] = { id:'', type:'function', function:{name:'',arguments:''} };
+                if (tc.id) tcs[tc.index].id = tc.id;
+                if (tc.function?.name) tcs[tc.index].function.name += tc.function.name;
+                if (tc.function?.arguments) tcs[tc.index].function.arguments += tc.function.arguments;
+              }
             }
-          }
-        } catch {}
+          } catch {}
+        }
+      });
+      r.data.on('end', () => onDone({ toolCalls: tcs.length ? tcs : null }));
+      r.data.on('error', (e) => { if (!isRetry) attempt(FALLBACK_CHAIN.find(f => f !== mdl), true); else onError(e); });
+    } catch (e) {
+      const status = e.response?.status;
+      if (!isRetry && (status === 404 || status === 429 || status === 502 || status === 503)) {
+        return attempt(FALLBACK_CHAIN.find(f => f !== mdl) || DEFAULT_MODEL, true);
       }
-    });
-    r.data.on('end', () => onDone({ toolCalls: tcs.length ? tcs : null }));
-    r.data.on('error', onError || console.error);
-  } catch (e) { if (onError) onError(e); else throw e; }
+      if (onError) onError(e); else console.error(e);
+    }
+  };
+  await attempt(model, false);
 }
 
-module.exports = { chat, streamChat, getModels, getFreeModels, getCacheInfo, MODEL_PRESETS, FREE_MODELS: SEED_FREE, selectModel, rotation };
+module.exports = { chat, streamChat, getModels, getFreeModels, getCacheInfo, MODEL_PRESETS, FREE_MODELS: SEED_FREE, selectModel, rotation, DEFAULT_MODEL };

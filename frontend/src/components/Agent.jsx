@@ -37,16 +37,16 @@ export default function Agent() {
   const [result, setResult] = useState(null)
   const [runs, setRuns] = useState([])
   const [activeRun, setActiveRun] = useState(null)
-  const [maxIter, setMaxIter] = useState(20)
   const [mode, setMode] = useState('deep')
+  const [currentRunId, setCurrentRunId] = useState(null)
   const [tab, setTab] = useState('run') // run | history
   const stepsRef = useRef(null)
 
   useEffect(() => {
     loadRuns()
-    socket.on('agent-start', ({ runId }) => { setActiveRun(runId); setSteps([]); setResult(null) })
+    socket.on('agent-start', ({ runId }) => { setActiveRun(runId); setCurrentRunId(runId); setSteps([]); setResult(null) })
     socket.on('agent-step', ({ step }) => setSteps(p => [...p, step]))
-    socket.on('agent-done', ({ result }) => { setResult(result); setRunning(false); loadRuns(); notify('✅ Agent task complete!', 'success') })
+    socket.on('agent-done', ({ result, stopped }) => { setResult(result); setRunning(false); loadRuns(); notify(stopped ? '🛑 Stopped' : '✅ Agent task complete!', stopped ? 'error' : 'success') })
     socket.on('agent-error', ({ error }) => { setResult(`❌ ${error}`); setRunning(false); notify(`❌ ${error}`, 'error') })
     return () => { socket.off('agent-start'); socket.off('agent-step'); socket.off('agent-done'); socket.off('agent-error') }
   }, [])
@@ -58,7 +58,11 @@ export default function Agent() {
   const run = () => {
     if (!task.trim() || running) return
     setRunning(true); setSteps([]); setResult(null); setTab('run')
-    socket.emit('run-agent', { task, model, repoOwner: repoCtx.owner, repoName: repoCtx.repo, maxIterations: maxIter, mode })
+    socket.emit('run-agent', { task, model, repoOwner: repoCtx.owner, repoName: repoCtx.repo, mode })
+  }
+
+  const stop = () => {
+    if (currentRunId) socket.emit('stop-agent', { runId: currentRunId })
   }
 
   const fillTemplate = (tmpl) => {
@@ -89,16 +93,17 @@ export default function Agent() {
           <textarea className="task-input" placeholder="Describe your task in detail. The agent will plan, research, and execute autonomously..." value={task} onChange={e => setTask(e.target.value)} rows={6} />
 
           <div className="run-config">
-            <label>Max iterations: <input type="number" className="iter-input" value={maxIter} onChange={e => setMaxIter(+e.target.value)} min={1} max={50} /></label>
             <div className="mode-toggle">
               <button className={`mode-btn ${mode === 'deep' ? 'active' : ''}`} onClick={() => setMode('deep')}>🧠 Deep</button>
               <button className={`mode-btn ${mode === 'fast' ? 'active' : ''}`} onClick={() => setMode('fast')}>⚡ Fast</button>
             </div>
           </div>
 
-          <button className={`run-btn ${running ? 'running' : ''}`} onClick={run} disabled={running}>
-            {running ? <><span className="spin">⏳</span> Running...</> : '▶ Run Agent'}
-          </button>
+          {!running ? (
+            <button className="run-btn" onClick={run}>▶ Run Agent (runs until complete)</button>
+          ) : (
+            <button className="run-btn stop-btn" onClick={stop}>🛑 Stop Agent</button>
+          )}
         </div>
 
         {/* Run history */}

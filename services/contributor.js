@@ -84,7 +84,7 @@ Create a complete fix. Return JSON:
 }
 JSON only.`;
 
-  const r = await chat([{ role: 'user', content: prompt }], model || 'anthropic/claude-3.5-sonnet');
+  const r = await chat([{ role: 'user', content: prompt }], model || 'meta-llama/llama-3.3-70b-instruct:free');
   let fix;
   try {
     let txt = r.choices[0].message.content.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
@@ -119,7 +119,7 @@ JSON only.`;
         if (!content) {
           // Need to generate content based on existing
           const genPrompt = `Current file ${fileChange.path}:\n${existing.content.slice(0,3000)}\n\nChange needed: ${fileChange.change_description}\n\nReturn ONLY the complete new file content, no markdown:`;
-          const gr = await chat([{ role:'user', content: genPrompt }], model || 'anthropic/claude-3.5-sonnet');
+          const gr = await chat([{ role:'user', content: genPrompt }], model || 'meta-llama/llama-3.3-70b-instruct:free');
           content = gr.choices[0].message.content.replace(/^```\w*\n?/,'').replace(/\n?```$/,'');
         }
       } catch { /* new file */ }
@@ -205,7 +205,7 @@ Files: ${contents.map(f=>f.name).join(', ')}
 Write a comprehensive, professional README with: badges, description, features, installation, usage, API docs if applicable, contributing guide, license.
 Return ONLY the markdown content.`;
 
-  const r = await chat([{ role: 'user', content: prompt }], model || 'anthropic/claude-3.5-sonnet', [], null, { max_tokens: 8000 });
+  const r = await chat([{ role: 'user', content: prompt }], model || 'meta-llama/llama-3.3-70b-instruct:free', [], null, { max_tokens: 8000 });
   const newReadme = r.choices[0].message.content;
   
   let sha;
@@ -425,7 +425,7 @@ Write complete test file using ${isJS ? 'Jest/Mocha' : 'pytest/unittest'}.
 Include: unit tests, edge cases, error cases.
 Return ONLY the test file content.`;
 
-      const r = await chat([{ role: 'user', content: prompt }], model || 'anthropic/claude-3.5-sonnet', [], null, { max_tokens: 6000 });
+      const r = await chat([{ role: 'user', content: prompt }], model || 'meta-llama/llama-3.3-70b-instruct:free', [], null, { max_tokens: 6000 });
       const testContent = r.choices[0].message.content.replace(/^```\w*\n?/,'').replace(/\n?```$/,'');
       
       const testPath = isJS ? `tests/${file.name.replace('.js', '.test.js')}` : `tests/test_${file.name}`;

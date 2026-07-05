@@ -45,7 +45,7 @@ function saveStore(store) {
 
 function initJsonStore(store) {
   if (!store.settings.system_prompt) store.settings.system_prompt = 'You are an expert AI coding agent.';
-  if (!store.settings.default_model) store.settings.default_model = 'anthropic/claude-3.5-sonnet';
+  if (!store.settings.default_model) store.settings.default_model = 'meta-llama/llama-3.3-70b-instruct:free';
   saveStore(store);
 }
 
@@ -90,7 +90,7 @@ function initSchema(d) {
     CREATE TABLE IF NOT EXISTS agent_runs (id TEXT PRIMARY KEY, task TEXT, status TEXT DEFAULT 'running', steps TEXT DEFAULT '[]', result TEXT, created_at INTEGER DEFAULT (unixepoch()));
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
     CREATE TABLE IF NOT EXISTS mcp_servers (id TEXT PRIMARY KEY, name TEXT, url TEXT, type TEXT, enabled INTEGER DEFAULT 1, config TEXT DEFAULT '{}');
-    INSERT OR IGNORE INTO settings VALUES ('default_model', 'anthropic/claude-3.5-sonnet');
+    INSERT OR IGNORE INTO settings VALUES ('default_model', 'meta-llama/llama-3.3-70b-instruct:free');
     INSERT OR IGNORE INTO settings VALUES ('system_prompt', 'You are an expert AI coding agent.');
   `);
 }

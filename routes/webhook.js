@@ -27,13 +27,13 @@ router.post('/', async (req, res) => {
       await gh.addLabels(owner, repo, body.issue.number, ['needs-triage']).catch(() => {});
     }
     if (event === 'issues' && body.action === 'labeled' && body.label?.name === 'ai-fix') {
-      contributor.solveIssue(owner, repo, body.issue.number, 'anthropic/claude-3.5-sonnet').catch(() => {});
+      contributor.solveIssue(owner, repo, body.issue.number, 'meta-llama/llama-3.3-70b-instruct:free').catch(() => {});
     }
     if (event === 'pull_request' && body.action === 'opened') {
       const diff = await gh.getPRDiff(owner, repo, body.pull_request.number).catch(() => null);
       if (diff) {
         const brain = require('../services/brain');
-        const review = await brain.analyzeCode(String(diff).slice(0, 6000), 'diff', 'Review this PR diff for bugs, security issues, and code quality. Be concise.', 'anthropic/claude-3.5-sonnet');
+        const review = await brain.analyzeCode(String(diff).slice(0, 6000), 'diff', 'Review this PR diff for bugs, security issues, and code quality. Be concise.', 'meta-llama/llama-3.3-70b-instruct:free');
         await gh.reviewPR(owner, repo, body.pull_request.number, `🤖 ARIA auto-review:\n\n${review.slice(0, 3000)}`, 'COMMENT').catch(() => {});
       }
     }

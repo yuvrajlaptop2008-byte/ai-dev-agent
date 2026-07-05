@@ -72,6 +72,16 @@
 - github.js: batch(items, fn, {concurrency, delayMs}) — safe rate-limited bulk ops, used in autoLabelIssues
 - webhook.js expanded: pull_request.opened → auto AI code review posted as PR comment; check_run failure → comments suggesting ai-fix label
 
+## v10 additions (major)
+- FREE MODELS ONLY, everywhere. All paid-model defaults ('anthropic/claude-3.5-sonnet' etc.) replaced site-wide with DEFAULT_MODEL='meta-llama/llama-3.3-70b-instruct:free'. openrouter.js has normalizeModel() that force-redirects any paid model string to DEFAULT_MODEL before every request (fixes 404s from paid models on a free-tier key). model_catalog.js PAID_MODELS table removed entirely. MODEL_PRESETS is free-only (11 entries). FALLBACK_CHAIN is free-only 4-model chain, triggers on 401/404/429/502/503.
+- Chat fix: streamChat() now has its own retry/fallback (previously only chat() did) — same normalizeModel + FALLBACK_CHAIN applied to the streaming socket path used by the Chat tab.
+- agent.js: NO iteration cap in normal operation (HARD_CAP=500 is a safety ceiling only, not a target). Loop runs until model stops calling tools (task genuinely done) or user hits Stop.
+- Stop/Kill: activeRuns Map in agent.js + stopAgent(runId). Socket event 'stop-agent' → server.js → aborts loop between iterations/tool calls. Agent.jsx: Stop button replaces Run button while running, max-iterations input removed from UI entirely.
+- GitHub full account control added to github.js + tools + routes/github.js: getAuthenticatedUser, listMyRepos, deleteRepo, updateRepoSettings, addCollaborator, removeCollaborator, transferRepo, archiveRepo, setRepoTopics. Agent tools: github_whoami, github_list_my_repos, github_delete_repo, github_update_repo, github_add_collaborator, github_archive_repo, github_set_topics.
+- OS/device tools (tools/index.js): create_folder, open_url (xdg-open/open/start per platform), open_app (background spawn), browser_automate (puppeteer-based click/type/wait/screenshot, gracefully degrades to a message if puppeteer/display unavailable — falls back to fetch_url/web_search).
+- package.json: puppeteer moved to optionalDependencies (won't break install if chromium download is blocked); run.sh installs with --omit=optional as fallback. version bumped to 10.0.0.
+- System prompt (agent.js SYSTEM) rewritten: "god-tier coding ability", explicit full GitHub account control framing, explicit "no iteration limit, keep going until done" instruction.
+
 ## Pending / Ideas Not Yet Built
 - WebSocket reconnect/backoff UI indicator
 

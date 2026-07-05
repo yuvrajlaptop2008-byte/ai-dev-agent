@@ -18,5 +18,11 @@ router.get('/repos/:owner/:repo/workflows', h(req => gh.listWorkflows(req.params
 router.post('/issues', h(req => gh.createIssue(req.body.owner, req.body.repo, req.body.title, req.body.body, req.body.labels ? req.body.labels.split(',').map(l=>l.trim()) : [], [])));
 router.get('/search/repos', h(req => gh.searchRepos(req.query.q)));
 router.get('/search/code', h(req => gh.searchCode(req.query.q, req.query.owner, req.query.repo)));
+router.get('/me', h(() => gh.getAuthenticatedUser()));
+router.get('/me/repos', h(req => gh.listMyRepos(req.query.type ? { type: req.query.type } : {})));
+router.delete('/repos/:owner/:repo', h(req => gh.deleteRepo(req.params.owner, req.params.repo)));
+router.patch('/repos/:owner/:repo', h(req => gh.updateRepoSettings(req.params.owner, req.params.repo, req.body)));
+router.post('/repos/:owner/:repo/collaborators', h(req => gh.addCollaborator(req.params.owner, req.params.repo, req.body.username, req.body.permission || 'push')));
+router.put('/repos/:owner/:repo/topics', h(req => gh.setRepoTopics(req.params.owner, req.params.repo, req.body.topics)));
 
 module.exports = router;

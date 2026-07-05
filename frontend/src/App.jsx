@@ -18,7 +18,7 @@ export const AppCtx = createContext({})
 
 export default function App() {
   const [view, setView] = useState('agent')
-  const [model, setModel] = useState('anthropic/claude-3.5-sonnet')
+  const [model, setModel] = useState('meta-llama/llama-3.3-70b-instruct:free')
   const [convId, setConvId] = useState(null)
   const [models, setModels] = useState({ presets: {}, all: [], free: [] })
   const [connected, setConnected] = useState(false)

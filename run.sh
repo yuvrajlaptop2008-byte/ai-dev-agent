@@ -9,7 +9,7 @@ if [ "$NODE_MAJOR" -lt 18 ]; then
   exit 1
 fi
 
-[ ! -d node_modules ] && npm install --ignore-scripts
+[ ! -d node_modules ] && (npm install --ignore-scripts || npm install --ignore-scripts --omit=optional)
 [ ! -d frontend/node_modules ] && (cd frontend && npm install)
 [ ! -d frontend/dist ] && (cd frontend && npm run build)
 node server.js
