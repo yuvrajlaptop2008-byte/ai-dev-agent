@@ -14,6 +14,7 @@ const vscode = require('../services/vscode');
 const gh = require('../services/github');
 const builder = require('../services/builder');
 const webllm = require('../services/webllm');
+const repoindex = require('../services/repoindex');
 
 const WORKSPACE = process.env.WORKSPACE || '/tmp/agent-workspace';
 
@@ -238,6 +239,28 @@ const T = {
     }
   },
 
+  delegate_task: async ({ task, max_iterations }, ctx) => {
+    // Runs an isolated sub-agent for an independent chunk of work, keeps main context small
+    const { runAgent } = require('../services/agent');
+    return new Promise((resolve) => {
+      const fakeSocket = { emit: (event, data) => {
+        if (event === 'agent-done') resolve(`Sub-task result:\n${data.result}`);
+        if (event === 'agent-error') resolve(`Sub-task failed: ${data.error}`);
+      }};
+      runAgent({ task, model: ctx?.model, repoOwner: ctx?.owner, repoName: ctx?.repo, mode: 'fast' }, fakeSocket).catch(e => resolve(`Sub-task error: ${e.message}`));
+    });
+  },
+
+  run_code: async ({ language, code }) => {
+    const os = require('os');
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'aria-run-'));
+    const ext = { python: 'py', javascript: 'js', node: 'js', bash: 'sh', typescript: 'ts' }[language] || 'txt';
+    const file = path.join(tmpDir, `snippet.${ext}`);
+    await fs.writeFile(file, code);
+    const cmd = { python: `python3 "${file}"`, javascript: `node "${file}"`, node: `node "${file}"`, bash: `bash "${file}"`, typescript: `npx -y tsx "${file}"` }[language] || `cat "${file}"`;
+    return sh(cmd, tmpDir, 20000);
+  },
+
   ask_web_llm: async ({ provider, prompt }) => {
     try {
       const r = await webllm.ask(provider, prompt);
@@ -358,18 +381,28 @@ const T = {
 
   // ── 7. GITHUB - FILES ───────────────────────────────
   github_get_file: async ({ owner, repo, path: p, ref }, ctx) => {
-    const { content, sha } = await gh.getFile(owner || ctx?.owner, repo || ctx?.repo, p, ref);
-    return `SHA: ${sha}\n\n${content.slice(0, 10000)}`;
+    const o = owner || ctx?.owner, r = repo || ctx?.repo;
+    if (!ref) { const cached = repoindex.get(o, r, p); if (cached) return cached; }
+    const { content, sha } = await gh.getFile(o, r, p, ref);
+    const out = `SHA: ${sha}\n\n${content.slice(0, 10000)}`;
+    if (!ref) repoindex.set(o, r, p, out);
+    return out;
   },
 
   github_put_file: async ({ owner, repo, path: p, content, message, sha }, ctx) => {
-    const d = await gh.putFile(owner || ctx?.owner, repo || ctx?.repo, p, content, message || 'AI Agent: update', sha);
+    const o = owner || ctx?.owner, r = repo || ctx?.repo;
+    const d = await gh.putFile(o, r, p, content, message || 'AI Agent: update', sha);
+    repoindex.invalidate(o, r);
     return `✅ File updated: ${p}`;
   },
 
   github_list_files: async ({ owner, repo, path: p, ref }, ctx) => {
-    const items = await gh.listContents(owner || ctx?.owner, repo || ctx?.repo, p || '', ref);
-    return items.map(i => `${i.type === 'dir' ? '📁' : '📄'} ${i.path} ${i.size ? `(${i.size}b)` : ''}`).join('\n');
+    const o = owner || ctx?.owner, r = repo || ctx?.repo;
+    if (!ref) { const cached = repoindex.get(o, r, `LIST:${p||''}`); if (cached) return cached; }
+    const items = await gh.listContents(o, r, p || '', ref);
+    const out = items.map(i => `${i.type === 'dir' ? '📁' : '📄'} ${i.path} ${i.size ? `(${i.size}b)` : ''}`).join('\n');
+    if (!ref) repoindex.set(o, r, `LIST:${p||''}`, out);
+    return out;
   },
 
   // ── 8. GITHUB - BRANCHES & PRs ───────────────────────
@@ -610,6 +643,8 @@ function getToolDefs() {
     fn('open_url', '🌐 Open a URL in the default browser on this machine', P({ url: S('URL to open') }, ['url'])),
     fn('open_app', '🖥️ Launch an application/command on this machine', P({ command: S('Shell command to launch the app') }, ['command'])),
     fn('browser_automate', '🌐 Automate a real browser: navigate, click, type, screenshot (requires puppeteer + display; falls back gracefully)', P({ url: S('URL to visit'), actions: A('Array of action objects: {type:click/type/wait/screenshot, selector, text, ms}') }, ['url'])),
+    fn('delegate_task', '🧩 Delegate an independent sub-task to a separate mini-agent (keeps your own context lean, runs in fast mode, returns final result only)', P({ task: S('The self-contained sub-task to delegate') }, ['task'])),
+    fn('run_code', '▶️ Execute a code snippet in an isolated sandbox and return output', P({ language: S('python/javascript/node/bash/typescript'), code: S('Code to run') }, ['language','code'])),
     fn('ask_web_llm', '🌐 Ask Claude.ai, ChatGPT, or Gemini directly through a logged-in browser session (for cross-checking or a second opinion)', P({ provider: S('claude, chatgpt, or gemini'), prompt: S('The question/prompt to send') }, ['provider','prompt'])),
     fn('webllm_login', '🌐 Open a visible browser window to log in to claude.ai/chatgpt.com/gemini once (session then persists)', P({ provider: S('claude, chatgpt, or gemini') }, ['provider'])),
     fn('build_project', '🚀 Design and ship a COMPLETE new open-source project (architecture, all files, README, tests, CI, LICENSE) to a brand new GitHub repo in one call', P({ idea: S('Description of the project to build'), private: B('Make repo private') }, ['idea'])),

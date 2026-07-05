@@ -77,6 +77,7 @@ async function runAgent(data, socket) {
   const messages = [{ role: 'user', content: task }];
   const toolDefs = tools.getToolDefs();
   let iteration = 0;
+  let verified = false;
 
   try {
     while (iteration < HARD_CAP) {
@@ -99,6 +100,12 @@ async function runAgent(data, socket) {
       if (msg.content) addStep({ type: 'thinking', content: msg.content });
 
       if (!msg.tool_calls || msg.tool_calls.length === 0) {
+        if (!isFast && !verified) {
+          verified = true;
+          messages.push({ role: 'user', content: 'Before finishing: verify the task is FULLY complete (re-check files/GitHub state if needed). If anything is missing, continue with tools now. If truly done, just confirm briefly.' });
+          addStep({ type: 'iteration', content: 'self-verify' });
+          continue;
+        }
         addStep({ type: 'complete', content: '✅ Task completed' });
         break;
       }

@@ -89,6 +89,11 @@
 - Settings UI: new panel — per-provider login button + session status, no key entry needed
 - Selectors in SITES{} are best-effort (claude.ai/chatgpt.com/gemini.google.com DOM changes over time) — if a selector breaks, ask()/isLoggedIn() throw a clear error naming the provider; fix by updating the `input`/`submit`/`response` selector for that provider in services/webllm.js
 
+## v12
+- repoindex.js: caches github_get_file/github_list_files (20min TTL, 500 cap), invalidated on github_put_file. Cuts repeat GitHub reads across iterations.
+- agent.js: one-time self-verify pass before stopping (deep mode only) — nudges model to check task is truly complete before ending.
+- tools: delegate_task (spins isolated fast-mode sub-agent, returns only final result — keeps main context small), run_code (sandbox exec: python/js/node/bash/ts).
+
 ## Pending / Ideas Not Yet Built
 - WebSocket reconnect/backoff UI indicator
 
