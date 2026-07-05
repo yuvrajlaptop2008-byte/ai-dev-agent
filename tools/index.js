@@ -13,6 +13,7 @@ const browser = require('../services/browser');
 const vscode = require('../services/vscode');
 const gh = require('../services/github');
 const builder = require('../services/builder');
+const webllm = require('../services/webllm');
 
 const WORKSPACE = process.env.WORKSPACE || '/tmp/agent-workspace';
 
@@ -235,6 +236,18 @@ const T = {
     } catch (e) {
       return `Browser automation unavailable (${e.message}). Falling back: use fetch_url/web_search instead.`;
     }
+  },
+
+  ask_web_llm: async ({ provider, prompt }) => {
+    try {
+      const r = await webllm.ask(provider, prompt);
+      return r.response;
+    } catch (e) { return `${e.message} (use webllm_login tool once first, or rely on your own tools instead)`; }
+  },
+
+  webllm_login: async ({ provider }) => {
+    const r = await webllm.openLoginWindow(provider);
+    return r.message;
   },
 
   build_project: async ({ idea, private: priv }, ctx) => {
@@ -597,6 +610,8 @@ function getToolDefs() {
     fn('open_url', '🌐 Open a URL in the default browser on this machine', P({ url: S('URL to open') }, ['url'])),
     fn('open_app', '🖥️ Launch an application/command on this machine', P({ command: S('Shell command to launch the app') }, ['command'])),
     fn('browser_automate', '🌐 Automate a real browser: navigate, click, type, screenshot (requires puppeteer + display; falls back gracefully)', P({ url: S('URL to visit'), actions: A('Array of action objects: {type:click/type/wait/screenshot, selector, text, ms}') }, ['url'])),
+    fn('ask_web_llm', '🌐 Ask Claude.ai, ChatGPT, or Gemini directly through a logged-in browser session (for cross-checking or a second opinion)', P({ provider: S('claude, chatgpt, or gemini'), prompt: S('The question/prompt to send') }, ['provider','prompt'])),
+    fn('webllm_login', '🌐 Open a visible browser window to log in to claude.ai/chatgpt.com/gemini once (session then persists)', P({ provider: S('claude, chatgpt, or gemini') }, ['provider'])),
     fn('build_project', '🚀 Design and ship a COMPLETE new open-source project (architecture, all files, README, tests, CI, LICENSE) to a brand new GitHub repo in one call', P({ idea: S('Description of the project to build'), private: B('Make repo private') }, ['idea'])),
     fn('analyze_image', '🖼️ Analyze/describe an image from a URL using vision AI', P({ image_url: S('Public image URL'), question: S('What to ask about the image') }, ['image_url'])),
     fn('web_search', '🌐 Search the web for information, docs, solutions', P({ query: S('Search query - be specific for better results'), num_results: N('Number of results (default 8)') }, ['query'])),

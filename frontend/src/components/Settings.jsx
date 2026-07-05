@@ -8,10 +8,13 @@ export default function Settings() {
   const [memData, setMemData] = useState(null)
   const [refreshing, setRefreshing] = useState(false)
   const refreshModels = async () => { setRefreshing(true); await fetch(`${API}/models/refresh`, { method: 'POST' }); notify('✅ Model list refreshed', 'success'); setRefreshing(false) }
+  const [webllmStatus, setWebllmStatus] = useState({})
+  const loginWeb = async (provider) => { await fetch(`${API}/webllm/login/${provider}`, { method: 'POST' }); notify(`Browser window opened for ${provider} — log in there`, 'success') }
 
   useEffect(() => {
     fetch(`${API}/memory`).then(r => r.json()).then(setS)
     fetch(`${API}/brain/memory`).then(r => r.json()).then(d => setMemData(d.result)).catch(() => {})
+    fetch(`${API}/webllm/status`).then(r=>r.json()).then(setWebllmStatus).catch(()=>{})
   }, [])
 
   const save = async () => {
@@ -42,6 +45,18 @@ export default function Settings() {
 
   return (
     <div className="settings-layout">
+      <div className="panel">
+        <div className="panel-title">🌐 Web LLMs (Claude / ChatGPT / Gemini)</div>
+        <p style={{fontSize:12,color:'var(--text2)',marginBottom:10}}>Log in once per provider (opens a real browser window). Session persists — no API key needed.</p>
+        {['claude','chatgpt','gemini'].map(p => (
+          <div key={p} style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+            <span style={{width:80,fontSize:13,textTransform:'capitalize'}}>{p}</span>
+            <span style={{fontSize:11,color: webllmStatus[p]==='session saved'?'var(--green)':'var(--text3)'}}>{webllmStatus[p]||'unknown'}</span>
+            <button className="mini-btn" onClick={()=>loginWeb(p)}>Log in</button>
+          </div>
+        ))}
+      </div>
+
       <div className="panel">
         <div className="panel-title">🔁 Key & Model Rotation</div>
         <p style={{fontSize:12,color:'var(--text2)',marginBottom:10}}>Add up to 3 keys each. Auto-rotates on rate-limit/auth errors. {rotStatus && `Active OpenRouter key: #${rotStatus.openrouterActive+1}/${rotStatus.openrouterKeys||0}`}</p>

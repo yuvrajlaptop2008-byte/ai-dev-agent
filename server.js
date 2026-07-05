@@ -26,6 +26,7 @@ app.use('/api/brain', require('./routes/brain'));
 app.use('/api/webhook', require('./routes/webhook'));
 app.use('/api/rotation', require('./routes/rotation'));
 app.use('/api/builder', require('./routes/builder'));
+app.use('/api/webllm', require('./routes/webllm'));
 
 // Serve frontend
 const distPath = path.join(__dirname, 'frontend/dist');

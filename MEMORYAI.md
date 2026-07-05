@@ -82,6 +82,13 @@
 - package.json: puppeteer moved to optionalDependencies (won't break install if chromium download is blocked); run.sh installs with --omit=optional as fallback. version bumped to 10.0.0.
 - System prompt (agent.js SYSTEM) rewritten: "god-tier coding ability", explicit full GitHub account control framing, explicit "no iteration limit, keep going until done" instruction.
 
+## v11 additions
+- services/webllm.js: drives claude.ai/chatgpt.com/gemini.google.com via puppeteer with persistent userDataDir (./data/browser-profile/<provider>) — real logged-in browser session, no API key/cost. openLoginWindow(provider) opens visible browser for one-time manual login; ask(provider, prompt) runs headless afterward, polls response DOM until stable text, returns it. status() reports which providers have a saved session.
+- routes/webllm.js: GET /status, POST /login/:provider, POST /ask
+- tools/index.js: agent tools ask_web_llm (cross-check with Claude/ChatGPT/Gemini mid-task), webllm_login
+- Settings UI: new panel — per-provider login button + session status, no key entry needed
+- Selectors in SITES{} are best-effort (claude.ai/chatgpt.com/gemini.google.com DOM changes over time) — if a selector breaks, ask()/isLoggedIn() throw a clear error naming the provider; fix by updating the `input`/`submit`/`response` selector for that provider in services/webllm.js
+
 ## Pending / Ideas Not Yet Built
 - WebSocket reconnect/backoff UI indicator
 
