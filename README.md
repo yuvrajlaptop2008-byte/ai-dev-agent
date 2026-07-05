@@ -1,59 +1,39 @@
-# ⚡ AI Dev Agent
+# ⚡ ARIA — Autonomous AI Dev Agent
 
-Autonomous AI coding agent with GitHub integration, MCP support, and multi-model switching.
+Fully autonomous coding agent: solves GitHub issues, ships whole projects, researches the web, drives VS Code, and talks to Claude/ChatGPT/Gemini through your own logged-in browser session — 100% free-model powered via OpenRouter.
 
-## Features
-- 💬 **Chat** — Streaming chat with any OpenRouter model
-- 🤖 **Autonomous Agent** — Solves GitHub issues, writes PRs, plans projects end-to-end
-- 🐙 **GitHub Integration** — Browse repos, view/comment on issues, create PRs
-- 🔌 **MCP Integration** — Connect any Model Context Protocol server
-- 🔄 **Multi-model switching** — Switch between Claude, GPT-4, Gemini, DeepSeek, and 200+ models
-- 💾 **Persistent memory** — SQLite-backed conversation history and settings
-- ⚡ **Real-time streaming** — WebSocket-based token streaming
+## What it does
+- **Runs until done.** No iteration cap — works until the task is verifiably complete, or you hit Stop.
+- **Full GitHub control.** Issues, PRs, branches, releases, CI, repo settings, collaborators, delete/archive/transfer — treats your account as its workspace.
+- **Ships real projects.** One idea in → architecture, code, tests, README, LICENSE, CI, all pushed to a brand-new repo.
+- **Researches like a human.** Live web search, multi-page synthesis, NPM/PyPI lookups, doc reading.
+- **Deep VS Code integration.** Opens files, configures debugging/tasks/settings, installs extensions, scaffolds workspaces.
+- **Browser + OS control.** Puppeteer automation, opens apps/URLs, creates files/folders on your machine.
+- **Free models only.** 65+ free OpenRouter models, auto key rotation (up to 3 keys), auto fallback on rate limits/errors.
+- **Talks to other AIs.** Optional: log into claude.ai / chatgpt.com / gemini.google.com once, ARIA can consult them for a second opinion — no API key needed.
+- **Remembers.** Persistent condensed memory across sessions; caches repo reads and research to save tokens/time.
 
-## Quick Start
-
+## Quick start
 ```bash
-git clone https://github.com/yuvrajlaptop2008-byte/ai-dev-agent
+git clone https://github.com/yuvrajlaptop2008-byte/ai-dev-agent.git
 cd ai-dev-agent
-cp .env.example .env
-# Edit .env with your API keys
-npm install
-cd frontend && npm install && npm run build && cd ..
-npm start
+cp .env.example .env   # add GITHUB_TOKEN + OPENROUTER_API_KEY
+bash run.sh
 ```
+Open `http://localhost:3001`. Full guide: [SETUP.md](SETUP.md).
 
-Open http://localhost:3001
+## Interface
+| Tab | Purpose |
+|---|---|
+| Agent | Give it any task, pick Deep/Fast mode, watch it work, Stop anytime |
+| Chat | Direct streaming chat, any free model |
+| Research | Deep think / plan / decide / web research on demand |
+| GitHub | Browse issues, PRs, branches, commits |
+| Contribute | One-click: solve issue, improve README, write tests, add CI, build new project |
+| VS Code | Open files, scaffold projects, manage extensions/configs |
+| Terminal | Full shell access |
+| MCP | Connect external tool servers |
+| Settings | Keys, model rotation, Web-LLM logins, memory viewer |
 
-## Environment Variables
-
-```
-OPENROUTER_API_KEY=your_key
-GITHUB_TOKEN=your_token
-PORT=3001
-```
-
-## Agent Capabilities
-
-The agent can:
-1. **Solve GitHub Issues** — Read issue, research solution, write code fix, create PR
-2. **Code Review** — Analyze code for bugs, security, performance
-3. **Project Planning** — Break down complex features into actionable steps
-4. **Research** — Search web, find docs, analyze codebases
-5. **Test Generation** — Write tests for any codebase
-6. **Documentation** — Auto-generate docs from code
-
-## MCP Integration
-
-Add any MCP-compatible server in the MCP tab. Supports SSE, Stdio, and WebSocket transport.
-
-## Model Support (via OpenRouter)
-- Claude 3.5 Sonnet / Opus
-- GPT-4o / GPT-4o-mini
-- Gemini Pro 1.5
-- DeepSeek Coder
-- Llama 3.1 70B
-- Mixtral 8x7B
-- Qwen 2.5 Coder
-- Codestral
-- 200+ more models
+## License
+MIT
