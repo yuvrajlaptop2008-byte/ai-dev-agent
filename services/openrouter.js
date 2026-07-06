@@ -16,28 +16,33 @@ const FALLBACK_CHAIN = [
   'meta-llama/llama-3.3-70b-instruct:free',
   'deepseek/deepseek-chat-v3-0324:free',
   'qwen/qwen-2.5-72b-instruct:free',
-  'google/gemma-3-27b-it:free'
+  'google/gemma-3-27b-it:free',
+  'qwen/qwen3-235b-a22b:free',
+  'mistralai/mistral-small-3.1-24b-instruct:free'
 ];
 
 const MODEL_PRESETS = {
   '🆓 llama-3.3-70b':   'meta-llama/llama-3.3-70b-instruct:free',
-  '🆓 deepseek-r1':     'deepseek/deepseek-r1:free',
   '🆓 deepseek-v3':     'deepseek/deepseek-chat-v3-0324:free',
   '🆓 qwen3-235b':      'qwen/qwen3-235b-a22b:free',
   '🆓 qwen-2.5-72b':    'qwen/qwen-2.5-72b-instruct:free',
   '🆓 qwen-2.5-coder':  'qwen/qwen-2.5-coder-32b-instruct:free',
-  '🆓 gemini-2.0-flash':'google/gemini-2.0-flash-exp:free',
   '🆓 gemma-3-27b':     'google/gemma-3-27b-it:free',
   '🆓 phi-4':           'microsoft/phi-4:free',
   '🆓 qwq-32b':         'qwen/qwq-32b:free',
   '🆓 llama-4-maverick':'meta-llama/llama-4-maverick:free',
+  '🆓 mistral-small':   'mistralai/mistral-small-3.1-24b-instruct:free',
 };
+
+const POOL = FALLBACK_CHAIN;
+let _poolIdx = 0;
+function nextPoolModel() { const m = POOL[_poolIdx % POOL.length]; _poolIdx++; return m; }
 
 function selectModel(task) {
   const t = (task || '').toLowerCase();
-  if (t.includes('code') || t.includes('bug') || t.includes('fix') || t.includes('implement')) return 'deepseek/deepseek-r1:free';
+  if (t.includes('code') || t.includes('bug') || t.includes('fix') || t.includes('implement')) return 'qwen/qwen-2.5-coder-32b-instruct:free';
   if (t.includes('reason') || t.includes('complex') || t.includes('analyze')) return 'qwen/qwen3-235b-a22b:free';
-  return DEFAULT_MODEL;
+  return nextPoolModel();
 }
 
 async function getModels(force) {
@@ -56,7 +61,8 @@ function getFreeModels() { return _cache.free.length ? _cache.free : SEED_FREE; 
 function getCacheInfo() { return { count: _cache.all.length, freeCount: getFreeModels().length, lastRefresh: _cache.ts ? new Date(_cache.ts).toISOString() : null }; }
 
 function normalizeModel(model) {
-  if (!model || model.startsWith('anthropic/') || model.startsWith('openai/') || model.startsWith('mistralai/codestral') || model.startsWith('deepseek/deepseek-coder-v2') || model.startsWith('x-ai/') || model.startsWith('cohere/') || model.startsWith('perplexity/')) return DEFAULT_MODEL;
+  const BLOCKED = ['anthropic/', 'openai/', 'mistralai/codestral', 'deepseek/deepseek-coder-v2', 'x-ai/', 'cohere/', 'perplexity/', 'deepseek/deepseek-r1', 'google/gemini-2.0-flash'];
+  if (!model || BLOCKED.some(b => model.startsWith(b))) return DEFAULT_MODEL;
   return model;
 }
 

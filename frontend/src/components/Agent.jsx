@@ -39,6 +39,7 @@ export default function Agent() {
   const [activeRun, setActiveRun] = useState(null)
   const [mode, setMode] = useState('deep')
   const [currentRunId, setCurrentRunId] = useState(null)
+  const [wasStopped, setWasStopped] = useState(false)
   const [tab, setTab] = useState('run') // run | history
   const stepsRef = useRef(null)
 
@@ -46,7 +47,7 @@ export default function Agent() {
     loadRuns()
     socket.on('agent-start', ({ runId }) => { setActiveRun(runId); setCurrentRunId(runId); setSteps([]); setResult(null) })
     socket.on('agent-step', ({ step }) => setSteps(p => [...p, step]))
-    socket.on('agent-done', ({ result, stopped }) => { setResult(result); setRunning(false); loadRuns(); notify(stopped ? '🛑 Stopped' : '✅ Agent task complete!', stopped ? 'error' : 'success') })
+    socket.on('agent-done', ({ result, stopped }) => { setResult(result); setRunning(false); setWasStopped(!!stopped); loadRuns(); notify(stopped ? '🛑 Stopped' : '✅ Agent task complete!', stopped ? 'error' : 'success') })
     socket.on('agent-error', ({ error }) => { setResult(`❌ ${error}`); setRunning(false); notify(`❌ ${error}`, 'error') })
     return () => { socket.off('agent-start'); socket.off('agent-step'); socket.off('agent-done'); socket.off('agent-error') }
   }, [])
@@ -63,6 +64,12 @@ export default function Agent() {
 
   const stop = () => {
     if (currentRunId) socket.emit('stop-agent', { runId: currentRunId })
+  }
+
+  const continueRun = () => {
+    if (!currentRunId) return
+    setRunning(true); setWasStopped(false); setResult(null)
+    socket.emit('continue-agent', { runId: currentRunId })
   }
 
   const fillTemplate = (tmpl) => {
@@ -100,7 +107,12 @@ export default function Agent() {
           </div>
 
           {!running ? (
-            <button className="run-btn" onClick={run}>▶ Run Agent (runs until complete)</button>
+            wasStopped && currentRunId
+              ? <div style={{display:'flex',gap:8}}>
+                  <button className="run-btn" onClick={continueRun}>▶ Continue</button>
+                  <button className="run-btn" onClick={run} style={{background:'var(--bg4)'}}>New Task</button>
+                </div>
+              : <button className="run-btn" onClick={run}>▶ Run Agent (runs until complete)</button>
           ) : (
             <button className="run-btn stop-btn" onClick={stop}>🛑 Stop Agent</button>
           )}

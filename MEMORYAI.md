@@ -94,6 +94,18 @@
 - agent.js: one-time self-verify pass before stopping (deep mode only) — nudges model to check task is truly complete before ending.
 - tools: delegate_task (spins isolated fast-mode sub-agent, returns only final result — keeps main context small), run_code (sandbox exec: python/js/node/bash/ts).
 
+## v13 (fixes + background/continue + free-only cleanup)
+- REMOVED from all pools/presets/fallback/normalizeModel-block: deepseek/deepseek-r1:free, google/gemini-2.0-flash-exp:free (unreliable/erroring per user report). model_catalog.js FREE_MODELS trimmed to stable-only list.
+- openrouter.js: added round-robin nextPoolModel() over FALLBACK_CHAIN, used by selectModel() so consecutive tasks auto-rotate models instead of always picking the same one.
+- FIXED real chat bug: server.js stream-chat socket handler was never writing to the messages table — Chat.jsx would refetch after streaming and get stale/empty history, wiping the just-finished exchange. Now persists both user+assistant messages and bumps conversation updated_at.
+- agent.js rewritten around coreLoop() shared by runAgent() and new continueAgent(runId, socket, instruction). Full message history + ctx/mode persisted per-run to data/agent-state/<runId>.json after every model turn and every tool batch — survives process/tab restarts within the same server process.
+- run-agent socket handler no longer awaited in server.js (fire-and-forget) — task keeps running in the Node process in the background even if the browser tab/socket disconnects; reconnect and call GET /api/agent/runs or continue-agent to pick back up.
+- New socket event 'continue-agent' {runId, instruction?} — resumes a stopped/capped run from saved state.
+- HARD_CAP (500) hits now mark run 'stopped' (not silently 'done') so Continue button appears instead of the run looking finished.
+- Agent.jsx: removed max-iterations input entirely; Stop button shown while running; Continue + New Task buttons shown after a stop.
+- MCP auto-use: new agent tools mcp_list_servers, mcp_call(server_name, tool, args) — ARIA can discover and call any enabled MCP server itself mid-task without being told which one.
+- SYSTEM prompt updated: explicit "runs in background, don't need the tab open" framing + "check MCP servers automatically when needed" line.
+
 ## Pending / Ideas Not Yet Built
 - WebSocket reconnect/backoff UI indicator
 

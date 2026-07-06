@@ -35,7 +35,7 @@ const READ_ONLY_TOOLS = new Set([
   'search_npm','search_pypi','fetch_github_readme','fetch_docs','fetch_api','analyze_image',
   'github_get_issue','github_list_issues','github_get_file','github_list_files','github_list_branches',
   'github_list_prs','github_get_repo','github_search_code','github_search_repos','github_list_commits',
-  'github_list_workflows','github_workflow_runs','recall','search_memory','analyze_code','vscode_list_extensions','github_whoami','github_list_my_repos'
+  'github_list_workflows','github_workflow_runs','recall','search_memory','analyze_code','vscode_list_extensions','github_whoami','github_list_my_repos','mcp_list_servers'
 ]);
 
 const T = {
@@ -237,6 +237,25 @@ const T = {
     } catch (e) {
       return `Browser automation unavailable (${e.message}). Falling back: use fetch_url/web_search instead.`;
     }
+  },
+
+  mcp_list_servers: async () => {
+    const { db } = require('../db');
+    const servers = db.prepare('SELECT * FROM mcp_servers').all();
+    if (!servers.length) return 'No MCP servers configured.';
+    return servers.map(s => `${s.enabled ? '✅' : '⭕'} ${s.name} (${s.type}) — ${s.url}`).join('\n');
+  },
+
+  mcp_call: async ({ server_name, tool, args }) => {
+    const { db } = require('../db');
+    const axios = require('axios');
+    const servers = db.prepare('SELECT * FROM mcp_servers').all();
+    const server = servers.find(s => s.name.toLowerCase().includes((server_name || '').toLowerCase()) && s.enabled);
+    if (!server) return `No enabled MCP server matching "${server_name}". Available: ${servers.map(s=>s.name).join(', ') || 'none'}`;
+    try {
+      const r = await axios.post(`${server.url}/tools/${tool}`, args || {}, { timeout: 20000 });
+      return JSON.stringify(r.data, null, 2).slice(0, 4000);
+    } catch (e) { return `MCP call failed: ${e.message}`; }
   },
 
   delegate_task: async ({ task, max_iterations }, ctx) => {
@@ -633,7 +652,7 @@ function getToolDefs() {
 
     // WEB
     fn('github_whoami', '🐙 Get authenticated GitHub account info', P({})),
-    fn('github_list_my_repos', '🐙 List all repos in your own GitHub account', P({ type: S('all/owner/member') })),
+    fn('github_list_my_repos','mcp_list_servers', '🐙 List all repos in your own GitHub account', P({ type: S('all/owner/member') })),
     fn('github_delete_repo', '🐙 Permanently delete a repository', P({ owner: S('Owner'), repo: S('Repo') }, ['owner','repo'])),
     fn('github_update_repo', '🐙 Update repo settings (description, homepage, visibility, features)', P({ owner: S('Owner'), repo: S('Repo'), description: S('New description'), homepage: S('Homepage URL'), private: B('Private'), has_issues: B('Enable issues'), has_wiki: B('Enable wiki') })),
     fn('github_add_collaborator', '🐙 Add a collaborator to a repo', P({ owner: S('Owner'), repo: S('Repo'), username: S('GitHub username'), permission: S('pull/push/admin') }, ['username'])),
@@ -643,6 +662,8 @@ function getToolDefs() {
     fn('open_url', '🌐 Open a URL in the default browser on this machine', P({ url: S('URL to open') }, ['url'])),
     fn('open_app', '🖥️ Launch an application/command on this machine', P({ command: S('Shell command to launch the app') }, ['command'])),
     fn('browser_automate', '🌐 Automate a real browser: navigate, click, type, screenshot (requires puppeteer + display; falls back gracefully)', P({ url: S('URL to visit'), actions: A('Array of action objects: {type:click/type/wait/screenshot, selector, text, ms}') }, ['url'])),
+    fn('mcp_list_servers', '🔌 List configured MCP servers and their status', P({})),
+    fn('mcp_call', '🔌 Call a tool on a connected MCP server (auto-selects by name match)', P({ server_name: S('Server name or partial match'), tool: S('Tool name to call on that server'), args: S('Arguments object as needed by that tool') }, ['server_name','tool'])),
     fn('delegate_task', '🧩 Delegate an independent sub-task to a separate mini-agent (keeps your own context lean, runs in fast mode, returns final result only)', P({ task: S('The self-contained sub-task to delegate') }, ['task'])),
     fn('run_code', '▶️ Execute a code snippet in an isolated sandbox and return output', P({ language: S('python/javascript/node/bash/typescript'), code: S('Code to run') }, ['language','code'])),
     fn('ask_web_llm', '🌐 Ask Claude.ai, ChatGPT, or Gemini directly through a logged-in browser session (for cross-checking or a second opinion)', P({ provider: S('claude, chatgpt, or gemini'), prompt: S('The question/prompt to send') }, ['provider','prompt'])),
@@ -701,7 +722,7 @@ function getToolDefs() {
     fn('vscode_open', '💻 Open file or path in VS Code', P({ path: S('Path to open (file or directory)'), line: N('Line number to jump to') })),
     fn('vscode_open_folder', '💻 Open a folder as VS Code workspace', P({ path: S('Folder path') })),
     fn('vscode_install_extension', '💻 Install a VS Code extension', P({ extension_id: S('Extension ID like esbenp.prettier-vscode') }, ['extension_id'])),
-    fn('vscode_list_extensions','github_whoami','github_list_my_repos', '💻 List installed VS Code extensions', P({})),
+    fn('vscode_list_extensions','github_whoami','github_list_my_repos','mcp_list_servers', '💻 List installed VS Code extensions', P({})),
     fn('vscode_create_workspace', '💻 Create a .code-workspace file', P({ name: S('Workspace name'), folders: A('Array of folder paths') }, ['name'])),
     fn('vscode_setup_project', '💻 Full VS Code project setup: settings, launch, tasks, snippets, workspace', P({ path: S('Project directory'), type: S('Project type: node/python/react/express') })),
     fn('vscode_create_launch', '💻 Create .vscode/launch.json for debugging', P({ path: S('Project directory'), configs: S('Custom launch configs as JSON string') })),

@@ -1,19 +1,24 @@
 /**
- * AGENT - Autonomous AI Agent, unlimited iterations until task complete or stopped
+ * AGENT - Autonomous AI Agent. Unlimited iterations, background-capable,
+ * resumable via Continue. State persisted per-run so it survives disconnects.
  */
 const { chat } = require('./openrouter');
 const { db } = require('../db');
 const { v4: uuid } = require('uuid');
 const tools = require('../tools');
 const brain = require('./brain');
+const fs = require('fs');
+const path = require('path');
 
 const DEFAULT_MODEL = 'meta-llama/llama-3.3-70b-instruct:free';
-const HARD_CAP = 500; // safety ceiling only, not a normal stopping point
+const HARD_CAP = 500;
+const STATE_DIR = path.join(__dirname, '../data/agent-state');
+fs.mkdirSync(STATE_DIR, { recursive: true });
 
 const SYSTEM = `You are ARIA (Autonomous Reasoning & Intelligence Agent) — an elite, fully autonomous AI software engineer and GitHub operator with god-tier coding ability across every language, framework, and domain.
 
 ## WHO YOU ARE
-You think deeply, plan carefully, decide independently, execute relentlessly, and never stop until the task is 100% complete and verified. You have 90+ tools: code, files, shell, git, GitHub (full account management), browser research, VS Code, OS-level app/file control, vision, and project scaffolding. You use them like a senior engineer would — fluidly, in whatever order gets the job done.
+You think deeply, plan carefully, decide independently, execute relentlessly, and never stop until the task is 100% complete and verified. You have 90+ tools: code, files, shell, git, GitHub (full account management), browser research, VS Code, OS-level app/file control, vision, and project scaffolding. You use them like a senior engineer would — fluidly, in whatever order gets the job done. You run continuously in the background even if the user closes the tab; work never pauses unless stopped.
 
 ## LOOP
 1. THINK → use \`think\` to understand the real goal and unknowns
@@ -26,7 +31,10 @@ You think deeply, plan carefully, decide independently, execute relentlessly, an
 8. FINISH → only stop calling tools when the task is verifiably complete. Then report links/paths/results.
 
 ## GITHUB — FULL ACCOUNT CONTROL
-You can create/delete repos, manage collaborators, branches, PRs, issues, releases, CI, topics — treat the user's GitHub account as your own workspace. Default to creating real, working, well-documented repos when asked to build something new.
+You can create/delete repos, manage collaborators, branches, PRs, issues, releases, CI, topics — treat the user's GitHub account as your own workspace.
+
+## MCP
+If a task needs a capability you don't have natively, check available MCP servers and use the relevant one automatically — don't wait to be told.
 
 ## RULES
 - Never ask the user a question. Decide yourself and proceed.
@@ -45,39 +53,54 @@ function stopAgent(runId) {
   return false;
 }
 
+function stateFile(runId) { return path.join(STATE_DIR, `${runId}.json`); }
+function saveState(runId, state) { try { fs.writeFileSync(stateFile(runId), JSON.stringify(state)); } catch {} }
+function loadState(runId) { try { return JSON.parse(fs.readFileSync(stateFile(runId), 'utf8')); } catch { return null; } }
+
 async function runAgent(data, socket) {
   const { task, model, repoOwner, repoName, mode } = data;
   const runId = uuid();
   const ctx = { owner: repoOwner, repo: repoName, model: model || DEFAULT_MODEL };
   const isFast = mode === 'fast';
-  const runState = { aborted: false };
-  activeRuns.set(runId, runState);
+  const selectedModel = ctx.model || brain.selectBestModel(task);
+  ctx.model = selectedModel;
 
   db.prepare('INSERT INTO agent_runs VALUES (?,?,?,?,?,unixepoch())').run(runId, task, 'running', '[]', null);
+
+  const messages = [{ role: 'user', content: task }];
+  return coreLoop({ runId, task, ctx, isFast, messages, verified: false }, socket);
+}
+
+async function continueAgent(runId, socket, extraInstruction) {
+  const state = loadState(runId);
+  if (!state) throw new Error('No saved state for this run — cannot continue.');
+  const messages = state.messages.concat([{ role: 'user', content: extraInstruction || 'Continue the task from where you left off. Keep working until fully complete.' }]);
+  db.prepare('UPDATE agent_runs SET status=? WHERE id=?').run('running', runId);
+  if (socket) socket.emit('agent-start', { runId, task: state.task, resumed: true });
+  return coreLoop({ runId, task: state.task, ctx: state.ctx, isFast: state.isFast, messages, verified: state.verified }, socket);
+}
+
+async function coreLoop({ runId, task, ctx, isFast, messages, verified }, socket) {
+  const runState = { aborted: false };
+  activeRuns.set(runId, runState);
 
   const steps = [];
   let lastSave = 0;
   const addStep = (step) => {
     step.ts = Date.now();
     steps.push(step);
-    if (Date.now() - lastSave > 800 || step.type === 'complete' || step.type === 'error' || step.type === 'stopped') {
+    if (Date.now() - lastSave > 800 || ['complete','error','stopped'].includes(step.type)) {
       try { db.prepare('UPDATE agent_runs SET steps=? WHERE id=?').run(JSON.stringify(steps), runId); } catch {}
       lastSave = Date.now();
     }
     if (socket) socket.emit('agent-step', { runId, step });
   };
 
-  if (socket) socket.emit('agent-start', { runId, task });
-  addStep({ type: 'init', content: `🚀 ${task}\n🧠 ${ctx.model}${isFast ? ' ⚡fast' : ''} | 🐙 ${repoOwner || '-'}/${repoName || '-'}` });
+  addStep({ type: 'init', content: `🚀 ${task}\n🧠 ${ctx.model}${isFast ? ' ⚡fast' : ''} | 🐙 ${ctx.owner || '-'}/${ctx.repo || '-'}` });
 
-  const selectedModel = ctx.model || brain.selectBestModel(task);
-  ctx.model = selectedModel;
   const systemPrompt = isFast ? FAST_SYSTEM : SYSTEM;
-
-  const messages = [{ role: 'user', content: task }];
   const toolDefs = tools.getToolDefs();
   let iteration = 0;
-  let verified = false;
 
   try {
     while (iteration < HARD_CAP) {
@@ -87,7 +110,7 @@ async function runAgent(data, socket) {
 
       let response;
       try {
-        response = await chat(messages, selectedModel, toolDefs, systemPrompt, { max_tokens: isFast ? 4000 : 8000, temperature: 0.15 });
+        response = await chat(messages, ctx.model, toolDefs, systemPrompt, { max_tokens: isFast ? 4000 : 8000, temperature: 0.15 });
       } catch (e) {
         addStep({ type: 'error', content: `Model error: ${e.message} → retrying ${DEFAULT_MODEL}` });
         response = await chat(messages, DEFAULT_MODEL, toolDefs, systemPrompt, { max_tokens: 6000, temperature: 0.15 });
@@ -96,6 +119,7 @@ async function runAgent(data, socket) {
       const choice = response.choices[0];
       const msg = choice.message;
       messages.push(msg);
+      saveState(runId, { task, ctx, isFast, messages, verified });
 
       if (msg.content) addStep({ type: 'thinking', content: msg.content });
 
@@ -142,14 +166,16 @@ async function runAgent(data, socket) {
         const r = await runOne(c);
         messages.push({ role: 'tool', tool_call_id: r.tc.id, content: String(r.content) });
       }
+      saveState(runId, { task, ctx, isFast, messages, verified });
     }
 
-    if (iteration >= HARD_CAP) addStep({ type: 'warning', content: `⚠️ Hit safety cap (${HARD_CAP} iterations)` });
+    if (iteration >= HARD_CAP) addStep({ type: 'warning', content: `⚠️ Hit safety cap (${HARD_CAP}) — click Continue to keep going` });
 
     const finalMsg = messages.filter(m => m.role === 'assistant' && m.content).pop();
-    const result = runState.aborted ? '🛑 Stopped by user' : (finalMsg?.content || 'Task completed');
-    db.prepare('UPDATE agent_runs SET status=?,result=? WHERE id=?').run(runState.aborted ? 'stopped' : 'done', result, runId);
-    if (socket) socket.emit('agent-done', { runId, result, steps, stopped: runState.aborted });
+    const result = runState.aborted ? '🛑 Stopped by user — click Continue to resume' : (finalMsg?.content || 'Task completed');
+    const status = runState.aborted ? 'stopped' : (iteration >= HARD_CAP ? 'stopped' : 'done');
+    db.prepare('UPDATE agent_runs SET status=?,result=? WHERE id=?').run(status, result, runId);
+    if (socket) socket.emit('agent-done', { runId, result, steps, stopped: status === 'stopped' });
 
   } catch (e) {
     const err = `❌ ${e.message}`;
@@ -163,4 +189,4 @@ async function runAgent(data, socket) {
   return runId;
 }
 
-module.exports = { runAgent, stopAgent, SYSTEM, FAST_SYSTEM };
+module.exports = { runAgent, continueAgent, stopAgent, SYSTEM, FAST_SYSTEM };

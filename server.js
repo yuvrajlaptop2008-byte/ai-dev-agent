@@ -42,22 +42,43 @@ io.on('connection', (socket) => {
   // Streaming chat
   socket.on('stream-chat', async (data) => {
     const { streamChat } = require('./services/openrouter');
+    const { db } = require('./db');
+    const { v4: uuidv4 } = require('uuid');
     let fullText = '';
+    const convId = data.convId;
     try {
+      if (convId && data.messages?.length) {
+        const lastUser = data.messages[data.messages.length - 1];
+        if (lastUser.role === 'user') {
+          try { db.prepare('INSERT INTO messages VALUES (?,?,?,?,?,unixepoch())').run(uuidv4(), convId, 'user', lastUser.content, null); } catch {}
+        }
+      }
       await streamChat(
         data,
         (chunk) => { if (chunk.type === 'text') { fullText += chunk.content; socket.emit('chunk', chunk.content); } },
-        (meta) => { socket.emit('done', { ...meta, fullText }); },
+        (meta) => {
+          if (convId && fullText) {
+            try {
+              db.prepare('INSERT INTO messages VALUES (?,?,?,?,?,unixepoch())').run(uuidv4(), convId, 'assistant', fullText, JSON.stringify({ model: data.model }));
+              db.prepare('UPDATE conversations SET updated_at=unixepoch() WHERE id=?').run(convId);
+            } catch {}
+          }
+          socket.emit('done', { ...meta, fullText });
+        },
         (err) => socket.emit('error', err.message)
       );
     } catch (e) { socket.emit('error', e.message); }
   });
 
   // Autonomous agent
-  socket.on('run-agent', async (data) => {
+  socket.on('run-agent', (data) => {
     const { runAgent } = require('./services/agent');
-    try { await runAgent(data, socket); }
-    catch (e) { socket.emit('agent-error', { error: e.message }); }
+    runAgent(data, socket).catch(e => socket.emit('agent-error', { error: e.message }));
+  });
+
+  socket.on('continue-agent', ({ runId, instruction }) => {
+    const { continueAgent } = require('./services/agent');
+    continueAgent(runId, socket, instruction).catch(e => socket.emit('agent-error', { runId, error: e.message }));
   });
 
   socket.on('stop-agent', ({ runId }) => {
