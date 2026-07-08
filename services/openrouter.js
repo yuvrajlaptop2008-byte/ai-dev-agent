@@ -36,12 +36,18 @@ const MODEL_PRESETS = {
 
 const POOL = FALLBACK_CHAIN;
 let _poolIdx = 0;
-function nextPoolModel() { const m = POOL[_poolIdx % POOL.length]; _poolIdx++; return m; }
+function nextPoolModel() {
+  for (let i = 0; i < POOL.length; i++) {
+    const m = POOL[_poolIdx % POOL.length]; _poolIdx++;
+    if (rotation.isModelHealthy(m)) return m;
+  }
+  return DEFAULT_MODEL;
+}
 
 function selectModel(task) {
   const t = (task || '').toLowerCase();
-  if (t.includes('code') || t.includes('bug') || t.includes('fix') || t.includes('implement')) return 'qwen/qwen-2.5-coder-32b-instruct:free';
-  if (t.includes('reason') || t.includes('complex') || t.includes('analyze')) return 'qwen/qwen3-235b-a22b:free';
+  if (t.includes('code') || t.includes('bug') || t.includes('fix') || t.includes('implement')) return rotation.isModelHealthy('qwen/qwen-2.5-coder-32b-instruct:free') ? 'qwen/qwen-2.5-coder-32b-instruct:free' : nextPoolModel();
+  if (t.includes('reason') || t.includes('complex') || t.includes('analyze')) return rotation.isModelHealthy('qwen/qwen3-235b-a22b:free') ? 'qwen/qwen3-235b-a22b:free' : nextPoolModel();
   return nextPoolModel();
 }
 
@@ -63,6 +69,7 @@ function getCacheInfo() { return { count: _cache.all.length, freeCount: getFreeM
 function normalizeModel(model) {
   const BLOCKED = ['anthropic/', 'openai/', 'mistralai/codestral', 'deepseek/deepseek-coder-v2', 'x-ai/', 'cohere/', 'perplexity/', 'deepseek/deepseek-r1', 'google/gemini-2.0-flash'];
   if (!model || BLOCKED.some(b => model.startsWith(b))) return DEFAULT_MODEL;
+  if (!rotation.isModelHealthy(model)) return nextPoolModel();
   return model;
 }
 
@@ -74,16 +81,18 @@ async function chat(messages, model, tools, systemPrompt, opts = {}) {
   if (tools?.length) { body.tools = tools; body.tool_choice = 'auto'; }
   try {
     const r = await axios.post(`${BASE}/chat/completions`, body, { headers: HEADERS(), timeout: 120000 });
+    rotation.reportModelResult(model, true);
     return r.data;
   } catch (e) {
     const status = e.response?.status;
+    if (status === 400 || status === 404 || status === 429 || status === 502 || status === 503) rotation.reportModelResult(model, false);
     if ((status === 401 || status === 429) && rotation.status().openrouterKeys > 1 && !opts._keyRotated) {
       rotation.rotateOpenrouter();
       return chat(messages, model, tools, systemPrompt, { ...opts, _keyRotated: true });
     }
     if ((status === 404 || status === 429 || status === 502 || status === 503) && !opts._retried) {
       for (const fb of FALLBACK_CHAIN) {
-        if (fb === model) continue;
+        if (fb === model || !rotation.isModelHealthy(fb)) continue;
         try { return await chat(messages, fb, tools, systemPrompt, { ...opts, _retried: true }); } catch {}
       }
     }
@@ -123,12 +132,13 @@ async function streamChat(data, onChunk, onDone, onError) {
           } catch {}
         }
       });
-      r.data.on('end', () => onDone({ toolCalls: tcs.length ? tcs : null }));
-      r.data.on('error', (e) => { if (!isRetry) attempt(FALLBACK_CHAIN.find(f => f !== mdl), true); else onError(e); });
+      r.data.on('end', () => { rotation.reportModelResult(mdl, true); onDone({ toolCalls: tcs.length ? tcs : null }); });
+      r.data.on('error', (e) => { rotation.reportModelResult(mdl, false); if (!isRetry) attempt(FALLBACK_CHAIN.find(f => f !== mdl && rotation.isModelHealthy(f)) || DEFAULT_MODEL, true); else onError(e); });
     } catch (e) {
       const status = e.response?.status;
+      rotation.reportModelResult(mdl, false);
       if (!isRetry && (status === 404 || status === 429 || status === 502 || status === 503)) {
-        return attempt(FALLBACK_CHAIN.find(f => f !== mdl) || DEFAULT_MODEL, true);
+        return attempt(FALLBACK_CHAIN.find(f => f !== mdl && rotation.isModelHealthy(f)) || DEFAULT_MODEL, true);
       }
       if (onError) onError(e); else console.error(e);
     }
@@ -136,4 +146,4 @@ async function streamChat(data, onChunk, onDone, onError) {
   await attempt(model, false);
 }
 
-module.exports = { chat, streamChat, getModels, getFreeModels, getCacheInfo, MODEL_PRESETS, FREE_MODELS: SEED_FREE, selectModel, rotation, DEFAULT_MODEL };
+module.exports = { chat, streamChat, getModels, getFreeModels, getCacheInfo, MODEL_PRESETS, FREE_MODELS: SEED_FREE, selectModel, rotation, DEFAULT_MODEL, modelHealth: rotation.healthReport };

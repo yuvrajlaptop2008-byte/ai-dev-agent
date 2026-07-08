@@ -115,6 +115,11 @@
 - Settings → Web LLMs panel lists aistudio as a 4th login row.
 - NOTE: sandbox filesystem was wiped between sessions this time — repo was re-cloned from GitHub (already had v13) and .env recreated from memory. If this happens again: `git clone https://<token>@github.com/yuvrajlaptop2008-byte/ai-dev-agent.git`, recreate .env from the template above, re-run `npm install --ignore-scripts` in both root and frontend/.
 
+## v15 (adaptive model health + system health-check)
+- rotation.js: added in-memory model health tracker (reportModelResult(model, ok), isModelHealthy(model), healthReport()). A model gets marked unhealthy after 3 consecutive failures, auto-recovers after 10min cooldown. No new file — lives in existing rotation.json-backed module's memory (health itself is NOT persisted to disk, resets on restart by design — cheap and self-correcting).
+- openrouter.js: chat()/streamChat() now call reportModelResult on every request; normalizeModel() redirects any currently-unhealthy model to a healthy pool pick; nextPoolModel()/selectModel() skip unhealthy models automatically. This means a flaky free model gets silently avoided for ~10min instead of repeatedly 404/429ing.
+- routes/health.js + GET /api/health: live checks — GitHub auth, one real OpenRouter ping call, model health report, model cache info, enabled MCP server count. `ok:false` if github or openrouter check fails.
+
 ## Pending / Ideas Not Yet Built
 - WebSocket reconnect/backoff UI indicator
 

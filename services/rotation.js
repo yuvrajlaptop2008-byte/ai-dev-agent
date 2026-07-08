@@ -34,9 +34,34 @@ function rotateOpenrouter() {
   save(s);
   return s.openrouterKeys[s.orIdx];
 }
+
+// ── Adaptive model health (in-memory, resets on restart — cheap and self-healing) ──
+const _health = new Map(); // model -> { fails, lastFail }
+const UNHEALTHY_THRESHOLD = 3;
+const RECOVERY_MS = 10 * 60 * 1000;
+
+function reportModelResult(model, ok) {
+  if (!model) return;
+  const h = _health.get(model) || { fails: 0, lastFail: 0 };
+  if (ok) { h.fails = 0; }
+  else { h.fails++; h.lastFail = Date.now(); }
+  _health.set(model, h);
+}
+function isModelHealthy(model) {
+  const h = _health.get(model);
+  if (!h) return true;
+  if (h.fails < UNHEALTHY_THRESHOLD) return true;
+  if (Date.now() - h.lastFail > RECOVERY_MS) { h.fails = 0; return true; } // auto-recover after cooldown
+  return false;
+}
+function healthReport() {
+  const out = {};
+  for (const [m, h] of _health.entries()) out[m] = { fails: h.fails, healthy: isModelHealthy(m) };
+  return out;
+}
 function status() {
   const s = load();
   return { openrouterKeys: s.openrouterKeys.length, openrouterActive: s.orIdx, models: s.models, modelIdx: s.modelIdx };
 }
 
-module.exports = { setOpenrouterKeys, setModelPool, getOpenrouterKey, nextModel, rotateOpenrouter, status };
+module.exports = { setOpenrouterKeys, setModelPool, getOpenrouterKey, nextModel, rotateOpenrouter, status, reportModelResult, isModelHealthy, healthReport };
