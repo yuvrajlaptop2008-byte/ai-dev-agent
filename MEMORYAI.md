@@ -106,6 +106,15 @@
 - MCP auto-use: new agent tools mcp_list_servers, mcp_call(server_name, tool, args) — ARIA can discover and call any enabled MCP server itself mid-task without being told which one.
 - SYSTEM prompt updated: explicit "runs in background, don't need the tab open" framing + "check MCP servers automatically when needed" line.
 
+## v14 (Google AI Studio + webllm fixes)
+- services/webllm.js edited in place (not rewritten from scratch conceptually — SITES/launch/ask signatures preserved, extended): added `aistudio` provider (aistudio.google.com/prompts/new_chat). AISTUDIO_MODEL_ALIASES maps short names (gemma, gemma-27b, gemma-9b, gemma-2b, gemini-flash, gemini-pro) to picker label substrings; selectAistudioModel() opens the model dropdown and XPath-matches before sending the prompt — best-effort, silently no-ops if Google changes the DOM (existing chat still works, just on whatever model was already selected).
+- REAL BUG FIXED: old code always pressed plain Enter to submit for every provider. AI Studio's textarea needs Ctrl+Enter (plain Enter just inserts a newline) — added `submitMethod: 'enter'|'ctrlEnter'` per site, aistudio uses ctrlEnter, others unchanged.
+- Consolidated `getBrowser()` duplication into one `launch(provider, headless)` used by isLoggedIn/openLoginWindow/ask (was two near-duplicate launch code paths before).
+- Token saving: webllm responses now hard-capped at MAX_RESPONSE_CHARS=6000 before being returned to the agent loop / API — previously unbounded innerText could be huge on long AI Studio/ChatGPT replies.
+- ask_web_llm tool + /api/webllm/ask route now accept optional `model` (aistudio only) — e.g. {provider:"aistudio", model:"gemma-27b", prompt:"..."}.
+- Settings → Web LLMs panel lists aistudio as a 4th login row.
+- NOTE: sandbox filesystem was wiped between sessions this time — repo was re-cloned from GitHub (already had v13) and .env recreated from memory. If this happens again: `git clone https://<token>@github.com/yuvrajlaptop2008-byte/ai-dev-agent.git`, recreate .env from the template above, re-run `npm install --ignore-scripts` in both root and frontend/.
+
 ## Pending / Ideas Not Yet Built
 - WebSocket reconnect/backoff UI indicator
 

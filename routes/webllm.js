@@ -4,6 +4,6 @@ const h = fn => async (req, res) => { try { res.json(await fn(req)); } catch (e)
 
 router.get('/status', h(() => w.status()));
 router.post('/login/:provider', h(req => w.openLoginWindow(req.params.provider)));
-router.post('/ask', h(req => w.ask(req.body.provider, req.body.prompt, req.body.timeoutMs)));
+router.post('/ask', h(req => w.ask(req.body.provider, req.body.prompt, req.body.timeoutMs, { model: req.body.model })));
 
 module.exports = router;

@@ -280,9 +280,9 @@ const T = {
     return sh(cmd, tmpDir, 20000);
   },
 
-  ask_web_llm: async ({ provider, prompt }) => {
+  ask_web_llm: async ({ provider, prompt, model }) => {
     try {
-      const r = await webllm.ask(provider, prompt);
+      const r = await webllm.ask(provider, prompt, 60000, { model });
       return r.response;
     } catch (e) { return `${e.message} (use webllm_login tool once first, or rely on your own tools instead)`; }
   },
@@ -666,7 +666,7 @@ function getToolDefs() {
     fn('mcp_call', '🔌 Call a tool on a connected MCP server (auto-selects by name match)', P({ server_name: S('Server name or partial match'), tool: S('Tool name to call on that server'), args: S('Arguments object as needed by that tool') }, ['server_name','tool'])),
     fn('delegate_task', '🧩 Delegate an independent sub-task to a separate mini-agent (keeps your own context lean, runs in fast mode, returns final result only)', P({ task: S('The self-contained sub-task to delegate') }, ['task'])),
     fn('run_code', '▶️ Execute a code snippet in an isolated sandbox and return output', P({ language: S('python/javascript/node/bash/typescript'), code: S('Code to run') }, ['language','code'])),
-    fn('ask_web_llm', '🌐 Ask Claude.ai, ChatGPT, or Gemini directly through a logged-in browser session (for cross-checking or a second opinion)', P({ provider: S('claude, chatgpt, or gemini'), prompt: S('The question/prompt to send') }, ['provider','prompt'])),
+    fn('ask_web_llm', '🌐 Ask Claude.ai, ChatGPT, Gemini, or Google AI Studio (incl. Gemma models) directly through a logged-in browser session — for a second opinion or a model you have no API key for', P({ provider: S('claude, chatgpt, gemini, or aistudio'), prompt: S('The question/prompt to send'), model: S('Only for aistudio: gemma-27b, gemma-9b, gemma-2b, gemini-flash, gemini-pro') }, ['provider','prompt'])),
     fn('webllm_login', '🌐 Open a visible browser window to log in to claude.ai/chatgpt.com/gemini once (session then persists)', P({ provider: S('claude, chatgpt, or gemini') }, ['provider'])),
     fn('build_project', '🚀 Design and ship a COMPLETE new open-source project (architecture, all files, README, tests, CI, LICENSE) to a brand new GitHub repo in one call', P({ idea: S('Description of the project to build'), private: B('Make repo private') }, ['idea'])),
     fn('analyze_image', '🖼️ Analyze/describe an image from a URL using vision AI', P({ image_url: S('Public image URL'), question: S('What to ask about the image') }, ['image_url'])),

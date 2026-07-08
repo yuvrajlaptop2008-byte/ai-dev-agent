@@ -48,7 +48,7 @@ export default function Settings() {
       <div className="panel">
         <div className="panel-title">🌐 Web LLMs (Claude / ChatGPT / Gemini)</div>
         <p style={{fontSize:12,color:'var(--text2)',marginBottom:10}}>Log in once per provider (opens a real browser window). Session persists — no API key needed.</p>
-        {['claude','chatgpt','gemini'].map(p => (
+        {['claude','chatgpt','gemini','aistudio'].map(p => (
           <div key={p} style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
             <span style={{width:80,fontSize:13,textTransform:'capitalize'}}>{p}</span>
             <span style={{fontSize:11,color: webllmStatus[p]==='session saved'?'var(--green)':'var(--text3)'}}>{webllmStatus[p]||'unknown'}</span>
