@@ -29,127 +29,155 @@ ${issues.slice(0, 20).map(i => `#${i.number}: ${i.title}\nLabels: ${i.labels.map
 Return JSON array of top 3: [{"number": N, "title": "...", "reason": "why good to work on", "difficulty": "easy/medium/hard"}]
 JSON only.`;
 
-  const r = await chat([{ role: 'user', content: prompt }], model || 'deepseek/deepseek-r1:free');
+  const r = await chat([{ role: 'user', content: prompt }], model || 'meta-llama/llama-3.3-70b-instruct:free');
   try {
     let txt = r.choices[0].message.content.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
     return JSON.parse(txt);
   } catch { return issues.slice(0,3).map(i => ({ number: i.number, title: i.title, reason: 'Selected automatically', difficulty: 'medium' })); }
 }
 
-// ── FULL ISSUE SOLVE WORKFLOW ─────────────────────────────
+// ── FULL ISSUE SOLVE WORKFLOW (real, human-like) ──────────
+const FILE_DELIM_START = '===FILE:';
+const FILE_DELIM_END = '===ENDFILE===';
+
+function parseFileBlocks(text) {
+  const files = [];
+  const re = /===FILE:\s*(.+?)\s*===\n([\s\S]*?)\n===ENDFILE===/g;
+  let m;
+  while ((m = re.exec(text))) files.push({ path: m[1].trim(), content: m[2] });
+  return files;
+}
+
 async function solveIssue(owner, repo, issueNumber, model) {
   const log = [];
   const addLog = (msg) => { log.push(msg); console.log(msg); };
+  const usedModel = model || 'meta-llama/llama-3.3-70b-instruct:free';
 
   addLog(`🔍 Reading issue #${issueNumber}...`);
   const issue = await gh.getIssue(owner, repo, issueNumber);
-  
-  // Research the problem
-  addLog(`🌐 Researching solution...`);
-  const searchResults = await browser.search(`${issue.title} fix solution github`, 5);
-  
-  // Understand codebase
-  addLog(`📁 Analyzing codebase...`);
-  let repoStructure = '';
-  try {
-    const contents = await gh.listContents(owner, repo, '');
-    repoStructure = contents.map(f => `${f.type} ${f.path}`).join('\n');
-  } catch {}
+  if (issue.pull_request) return { log: [...log, '⚠️ This is a PR, not an issue.'], error: 'is_pr' };
 
-  // Generate fix
+  const repoInfo = await gh.getRepo(owner, repo);
+  const baseBranch = repoInfo.default_branch || 'main';
+
+  addLog(`📁 Reading full repo tree...`);
+  let tree = [];
+  try { tree = await gh.getFullTree(owner, repo, baseBranch); } catch (e) { addLog(`⚠️ Tree read failed: ${e.message}`); }
+  const treeText = tree.slice(0, 400).map(t => t.path).join('\n');
+
+  addLog(`🧠 Identifying relevant files...`);
+  const pickPrompt = `Issue #${issueNumber}: ${issue.title}
+${issue.body?.slice(0, 1500) || ''}
+
+Full file list in this repo:
+${treeText.slice(0, 4000)}
+
+Which existing files are most relevant to read to fix this issue? Also list any genuinely NEW files needed.
+Return JSON only: {"read_files": ["path1","path2"], "new_files": ["path3"]}
+Max 6 files total.`;
+  let toRead = [], newFiles = [];
+  try {
+    const pr = await chat([{ role: 'user', content: pickPrompt }], usedModel, [], null, { max_tokens: 1000 });
+    const parsed = JSON.parse(pr.choices[0].message.content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim());
+    toRead = (parsed.read_files || []).slice(0, 6);
+    newFiles = (parsed.new_files || []).slice(0, 3);
+  } catch { addLog('⚠️ File selection failed, proceeding with issue text only'); }
+
+  addLog(`📖 Reading ${toRead.length} file(s)...`);
+  const fileContents = {};
+  for (const p of toRead) {
+    try { const f = await gh.getFile(owner, repo, p, baseBranch); fileContents[p] = f.content.slice(0, 4000); }
+    catch (e) { addLog(`⚠️ Couldn't read ${p}: ${e.message}`); }
+  }
+
+  addLog(`🌐 Researching if needed...`);
+  const searchResults = await browser.search(`${issue.title} ${repoInfo.language || ''} fix`, 4).catch(() => []);
+
   addLog(`🧠 Generating fix...`);
-  const prompt = `You are an expert software engineer contributing to ${owner}/${repo}.
+  const genPrompt = `You are a senior ${repoInfo.language || ''} engineer fixing a real GitHub issue in ${owner}/${repo}.
 
 ISSUE #${issueNumber}: ${issue.title}
-Body: ${issue.body?.slice(0, 2000) || 'No description'}
-Comments: ${issue.comments?.slice(0,3).map(c => c.body).join('\n') || 'none'}
+${issue.body?.slice(0, 2000) || 'No description'}
+${issue.comments?.length ? `\nDiscussion:\n${issue.comments.slice(0, 3).map(c => c.body).join('\n---\n').slice(0, 1500)}` : ''}
 
-Repo structure:
-${repoStructure.slice(0, 1000)}
+Current file contents:
+${Object.entries(fileContents).map(([p, c]) => `--- ${p} ---\n${c}`).join('\n\n') || '(no existing files read — this may need new files)'}
 
-Research findings:
-${searchResults.slice(0,3).map(r => `- ${r.title}: ${r.snippet}`).join('\n')}
+${searchResults.length ? `Relevant research:\n${searchResults.slice(0, 3).map(r => `- ${r.snippet}`).join('\n')}` : ''}
 
-Create a complete fix. Return JSON:
-{
-  "analysis": "what causes this issue",
-  "approach": "how you will fix it",
-  "branch_name": "fix/issue-${issueNumber}-short-description",
-  "files_to_change": [
-    {"path": "file/path.js", "change_description": "what to change", "new_content": "FULL file content or null if you need to read first"}
-  ],
-  "pr_title": "fix: ...",
-  "pr_body": "markdown PR description with what was done, how tested",
-  "issue_comment": "comment to post on the issue explaining the fix"
-}
-JSON only.`;
+Write the COMPLETE fix. Output format is STRICT — for each file you change or create, output exactly:
+===FILE: relative/path.ext===
+<the ENTIRE new file content, nothing omitted, no partial diffs>
+===ENDFILE===
 
-  const r = await chat([{ role: 'user', content: prompt }], model || 'meta-llama/llama-3.3-70b-instruct:free');
-  let fix;
+Repeat the block for every file. Do not add any other text, explanation, or markdown fences outside the blocks.
+After all file blocks, add one more block:
+===FILE: __META__===
+BRANCH: fix/issue-${issueNumber}-<short-slug>
+TITLE: fix: <concise title>
+BODY: <2-4 sentence PR description of the fix>
+COMMENT: <1-2 sentence comment to post on the issue>
+===ENDFILE===`;
+
+  const r = await chat([{ role: 'user', content: genPrompt }], usedModel, [], null, { max_tokens: 8000, temperature: 0.15 });
+  const raw = r.choices[0].message.content;
+  const blocks = parseFileBlocks(raw);
+  const metaBlock = blocks.find(b => b.path === '__META__');
+  const fileBlocks = blocks.filter(b => b.path !== '__META__');
+
+  if (!fileBlocks.length) return { log: [...log, '❌ Model produced no parseable file blocks'], error: 'parse_failed', raw: raw.slice(0, 1000) };
+
+  const meta = {};
+  if (metaBlock) {
+    metaBlock.content.split('\n').forEach(line => {
+      const m = line.match(/^(BRANCH|TITLE|BODY|COMMENT):\s*(.*)$/);
+      if (m) meta[m[1].toLowerCase()] = (meta[m[1].toLowerCase()] || '') + (meta[m[1].toLowerCase()] ? ' ' : '') + m[2];
+    });
+  }
+  const branchName = (meta.branch || `fix/issue-${issueNumber}-auto`).replace(/[^\w\-\/]/g, '-').slice(0, 60);
+  const prTitle = meta.title || `fix: resolve issue #${issueNumber}`;
+  const prBody = `${meta.body || 'Automated fix.'}\n\nCloses #${issueNumber}`;
+
+  addLog(`📋 Plan: ${prTitle} (${fileBlocks.length} file(s)) → branch ${branchName}`);
+
+  addLog(`🌿 Creating branch: ${branchName}...`);
   try {
-    let txt = r.choices[0].message.content.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
-    fix = JSON.parse(txt);
-  } catch { return { log, error: 'Failed to parse fix' }; }
-
-  addLog(`📋 Plan: ${fix.approach}`);
-
-  // Create branch
-  addLog(`🌿 Creating branch: ${fix.branch_name}...`);
-  try {
-    // Try to get default branch
-    const repoInfo = await gh.getRepo(owner, repo);
-    const baseBranch = repoInfo.default_branch || 'main';
-    await gh.createBranch(owner, repo, fix.branch_name, baseBranch);
+    await gh.createBranch(owner, repo, branchName, baseBranch);
   } catch (e) {
-    addLog(`⚠️ Branch create failed: ${e.message} - trying main`);
-    try { await gh.createBranch(owner, repo, fix.branch_name, 'main'); } catch {}
+    if (!/already exists/i.test(e.message)) addLog(`⚠️ Branch create issue: ${e.message}`);
+    else addLog(`ℹ️ Branch already exists, reusing it`);
   }
 
-  // Apply file changes
-  for (const fileChange of (fix.files_to_change || [])) {
-    addLog(`✏️ Updating ${fileChange.path}...`);
+  let changed = 0;
+  for (const fb of fileBlocks) {
+    addLog(`✏️ Writing ${fb.path}...`);
     try {
-      let content = fileChange.new_content;
       let sha;
-      
-      // Get current SHA if file exists
-      try {
-        const existing = await gh.getFile(owner, repo, fileChange.path, fix.branch_name);
-        sha = existing.sha;
-        if (!content) {
-          // Need to generate content based on existing
-          const genPrompt = `Current file ${fileChange.path}:\n${existing.content.slice(0,3000)}\n\nChange needed: ${fileChange.change_description}\n\nReturn ONLY the complete new file content, no markdown:`;
-          const gr = await chat([{ role:'user', content: genPrompt }], model || 'meta-llama/llama-3.3-70b-instruct:free');
-          content = gr.choices[0].message.content.replace(/^```\w*\n?/,'').replace(/\n?```$/,'');
-        }
-      } catch { /* new file */ }
-
-      if (content) {
-        await gh.putFile(owner, repo, fileChange.path, content, `${fix.pr_title} - ${fileChange.path}`, sha);
-        addLog(`✅ Updated ${fileChange.path}`);
-      }
-    } catch (e) { addLog(`❌ Failed to update ${fileChange.path}: ${e.message}`); }
+      try { const existing = await gh.getFile(owner, repo, fb.path, branchName); sha = existing.sha; } catch {} // new file → no sha
+      await gh.putFile(owner, repo, fb.path, fb.content.trimEnd() + '\n', `${prTitle} — ${fb.path}`, sha);
+      changed++;
+      addLog(`✅ ${fb.path}`);
+    } catch (e) { addLog(`❌ ${fb.path}: ${e.message}`); }
   }
 
-  // Create PR
+  if (!changed) return { log, error: 'no_files_written' };
+
   addLog(`🔀 Creating PR...`);
   let prUrl = '';
   try {
-    const repoInfo = await gh.getRepo(owner, repo);
-    const pr = await gh.createPR(owner, repo, fix.pr_title, fix.pr_body, fix.branch_name, repoInfo.default_branch || 'main');
+    const pr = await gh.createPR(owner, repo, prTitle, prBody, branchName, baseBranch);
     prUrl = pr.html_url;
     addLog(`✅ PR created: ${prUrl}`);
   } catch (e) { addLog(`❌ PR failed: ${e.message}`); }
 
-  // Comment on issue
-  if (fix.issue_comment && prUrl) {
-    const comment = `${fix.issue_comment}\n\n🔀 PR: ${prUrl}`;
-    await gh.commentIssue(owner, repo, issueNumber, comment);
+  if (prUrl) {
+    const comment = `${meta.comment || 'Opened a fix for this.'}\n\n🔀 ${prUrl}`;
+    await gh.commentIssue(owner, repo, issueNumber, comment).catch(() => {});
     addLog(`💬 Commented on issue`);
   }
 
-  await logContribution(owner, repo, { type: 'solve-issue', issueNumber, prUrl, title: fix.pr_title });
-  return { log, fix, prUrl, issue };
+  await logContribution(owner, repo, { type: 'solve-issue', issueNumber, prUrl, title: prTitle, filesChanged: changed });
+  return { log, prUrl, title: prTitle, filesChanged: changed, issue };
 }
 
 async function logContribution(owner, repo, entry) {
@@ -405,34 +433,37 @@ jobs:
 
 // ── WRITE TESTS ──────────────────────────────────────────
 async function writeTests(owner, repo, model) {
-  const contents = await gh.listContents(owner, repo, '').catch(() => []);
-  const sourceFiles = contents.filter(f => f.type === 'file' && (f.name.endsWith('.js') || f.name.endsWith('.py')) && !f.name.includes('test'));
-  
+  let tree = [];
+  try { tree = await gh.getFullTree(owner, repo); } catch { tree = (await gh.listContents(owner, repo, '').catch(() => [])).map(f => ({ path: f.path, type: f.type })); }
+  const sourceFiles = tree.filter(f => /\.(js|ts|py)$/.test(f.path) && !/test|spec|node_modules|dist|\.min\./.test(f.path)).slice(0, 5);
+
   if (!sourceFiles.length) return 'No source files found';
-  
+
   const results = [];
   for (const file of sourceFiles.slice(0, 3)) {
     try {
       const { content } = await gh.getFile(owner, repo, file.path);
-      const isJS = file.name.endsWith('.js');
-      
-      const prompt = `Write comprehensive tests for this ${isJS ? 'JavaScript' : 'Python'} file.
+      const isJS = /\.(js|ts)$/.test(file.path);
+
+      const prompt = `Write comprehensive tests for this ${isJS ? 'JavaScript/TypeScript' : 'Python'} file.
 File: ${file.path}
 Content:
 ${content.slice(0, 3000)}
 
-Write complete test file using ${isJS ? 'Jest/Mocha' : 'pytest/unittest'}.
+Write complete test file using ${isJS ? 'Jest' : 'pytest'}.
 Include: unit tests, edge cases, error cases.
-Return ONLY the test file content.`;
+Return ONLY the test file content, no markdown fences.`;
 
       const r = await chat([{ role: 'user', content: prompt }], model || 'meta-llama/llama-3.3-70b-instruct:free', [], null, { max_tokens: 6000 });
-      const testContent = r.choices[0].message.content.replace(/^```\w*\n?/,'').replace(/\n?```$/,'');
-      
-      const testPath = isJS ? `tests/${file.name.replace('.js', '.test.js')}` : `tests/test_${file.name}`;
+      const testContent = r.choices[0].message.content.replace(/^```\w*\n?/, '').replace(/\n?```$/, '');
+
+      const base = file.path.split('/').pop();
+      const testPath = isJS ? `tests/${base.replace(/\.(js|ts)$/, '.test.$1')}` : `tests/test_${base}`;
       await gh.putFile(owner, repo, testPath, testContent, `test: add tests for ${file.path}`);
-      results.push(`✅ Tests for ${file.path}`);
+      results.push(`✅ Tests for ${file.path} → ${testPath}`);
     } catch (e) { results.push(`❌ ${file.path}: ${e.message}`); }
   }
+  await logContribution(owner, repo, { type: 'write-tests', count: results.length });
   return results.join('\n');
 }
 

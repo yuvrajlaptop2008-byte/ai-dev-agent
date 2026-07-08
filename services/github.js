@@ -94,6 +94,14 @@ async function listContents(owner, repo, p = '', ref) {
   const { data } = await getOctokit().repos.getContent(params);
   return Array.isArray(data) ? data : [data];
 }
+// Full recursive file tree via Git Trees API — needed to actually understand a codebase (listContents alone only sees one directory level)
+async function getFullTree(owner, repo, ref) {
+  const ok = getOctokit();
+  const branch = ref || (await ok.repos.get({ owner, repo })).data.default_branch;
+  const { data: refData } = await ok.git.getRef({ owner, repo, ref: `heads/${branch}` });
+  const { data } = await ok.git.getTree({ owner, repo, tree_sha: refData.object.sha, recursive: '1' });
+  return data.tree.filter(t => t.type === 'blob').map(t => ({ path: t.path, size: t.size }));
+}
 
 // ─── BRANCHES ──────────────────────────────────────────────
 async function listBranches(owner, repo) {
@@ -248,7 +256,7 @@ async function batch(items, fn, { concurrency = 3, delayMs = 250 } = {}) {
 module.exports = {
   getIssue, listIssues, createIssue, updateIssue, closeIssue, commentIssue, addLabels, assignIssue,
   listPRs, createPR, mergePR, getPRDiff, reviewPR,
-  getFile, putFile, deleteFile, listContents,
+  getFile, putFile, deleteFile, listContents, getFullTree,
   listBranches, createBranch, deleteBranch,
   getUserRepos, getRepo, createRepo, forkRepo, starRepo, searchCode, searchRepos,
   deleteRepo, updateRepoSettings, addCollaborator, removeCollaborator, getAuthenticatedUser, listMyRepos, transferRepo, archiveRepo, setRepoTopics,

@@ -120,6 +120,14 @@
 - openrouter.js: chat()/streamChat() now call reportModelResult on every request; normalizeModel() redirects any currently-unhealthy model to a healthy pool pick; nextPoolModel()/selectModel() skip unhealthy models automatically. This means a flaky free model gets silently avoided for ~10min instead of repeatedly 404/429ing.
 - routes/health.js + GET /api/health: live checks — GitHub auth, one real OpenRouter ping call, model health report, model cache info, enabled MCP server count. `ok:false` if github or openrouter check fails.
 
+## v16 (solveIssue actually works now — was structurally broken before)
+- REAL BUG FIXED: old solveIssue asked the LLM to embed full source code as a JSON string field (`new_content`). Code containing quotes/backticks/newlines routinely breaks JSON.parse — this was silently failing most real fixes. Replaced with a delimiter protocol: model outputs `===FILE: path===\n<raw content>\n===ENDFILE===` blocks, parsed via regex (services/contributor.js: FILE_DELIM_START/END, parseFileBlocks()). No escaping needed, verified against quotes/backticks/multi-file in isolation.
+- REAL BUG FIXED: gh.listContents(owner, repo, '') only ever saw the repo ROOT directory — any file in src/, lib/, etc. was invisible to the agent. Added services/github.js: getFullTree(owner, repo, ref) using the Git Trees API with recursive=1 — this is what solveIssue and writeTests now use to actually see the whole codebase.
+- solveIssue rewritten end-to-end: (1) read issue+comments, (2) read full recursive tree, (3) cheap LLM call to pick which ~6 files are actually relevant + any new files needed, (4) read those files' real current content, (5) one coherent generation call that sees ALL selected files together (old version generated each file independently with zero cross-file awareness), (6) delimiter-parsed output, (7) branch created against the repo's actual default_branch (was hardcoded 'main' before — broke on repos using 'master' or other default), (8) branch-already-exists is now caught and reused instead of silently failing, (9) SHA fetched fresh per-file right before write (avoids stale-SHA 409 conflicts), (10) PR body auto-appends "Closes #N", (11) contribution logged with filesChanged count.
+- writeTests upgraded to use getFullTree too (was root-only, basically only ever found files sitting directly in the repo root).
+- findGoodIssues: removed leftover deepseek-r1:free default (already banned repo-wide in v13/v14, this was a straggler).
+- Net effect: issue→branch→commit→PR→issue-comment is now a real, verifiable pipeline instead of one that looked complete but silently no-op'd on any file with a quote or backtick in it (i.e. almost all real code).
+
 ## Pending / Ideas Not Yet Built
 - WebSocket reconnect/backoff UI indicator
 
