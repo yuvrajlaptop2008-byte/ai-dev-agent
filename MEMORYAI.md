@@ -135,6 +135,10 @@
 - New tool git_terminal(repo_dir, command) — raw git via actual shell, for anything git_op doesn't enumerate. Three-layer git/GitHub strategy documented in agent.js SYSTEM prompt: github_* API tools / git_op structured / git_terminal+bash raw shell — pick whichever fits, clone+vscode_setup_project pairing encouraged.
 - New tools clipboard_copy/clipboard_paste (pbcopy/pbpaste, clip/Get-Clipboard, xclip/xsel — degrades gracefully with a message if no display/clipboard tool present).
 
+## v15 (senior-engineer judgment baked into prompt)
+- agent.js SYSTEM prompt: new "ENGINEER'S JUDGMENT" section — Conventional Commits, branch naming (feature//fix//chore/), PR standards (title/body/Closes #N/focused diffs), semver, self-review-before-PR mindset, repo hygiene defaults, match-existing-style-before-writing, real merge conflict resolution (not blind ours/theirs), root-cause debugging discipline.
+- Default fallback commit messages changed from generic "AI: automated commit"/"AI Agent: update" to Conventional Commits style ("chore: automated update" / "chore: update file") — only used when the agent doesn't supply its own message.
+
 ## Pending / Ideas Not Yet Built
 - WebSocket reconnect/backoff UI indicator
 

@@ -196,7 +196,7 @@ async function gitOps(repoDir, operation, args = {}) {
   switch (operation) {
     case 'status': return git.status();
     case 'add': return git.add(args.files || '.');
-    case 'commit': return git.commit(args.message || 'AI: automated commit');
+    case 'commit': return git.commit(args.message || 'chore: automated update');
     case 'push': return git.push(args.remote || 'origin', args.branch || 'main', args.force ? ['--force'] : []);
     case 'pull': return git.pull(args.remote || 'origin', args.branch || 'main');
     case 'fetch': return git.fetch(args.remote || 'origin');

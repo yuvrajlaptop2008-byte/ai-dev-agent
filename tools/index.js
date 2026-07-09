@@ -429,7 +429,7 @@ const T = {
 
   github_put_file: async ({ owner, repo, path: p, content, message, sha }, ctx) => {
     const o = owner || ctx?.owner, r = repo || ctx?.repo;
-    const d = await gh.putFile(o, r, p, content, message || 'AI Agent: update', sha);
+    const d = await gh.putFile(o, r, p, content, message || 'chore: update file', sha);
     repoindex.invalidate(o, r);
     return `✅ File updated: ${p}`;
   },
