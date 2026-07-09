@@ -311,6 +311,16 @@ const T = {
     return r.message;
   },
 
+  strengthen_profile: async ({ username, limit }, ctx) => {
+    const r = await builder.strengthenProfile(username, ctx?.model, { limit });
+    return r.log.join('\n');
+  },
+
+  build_profile_readme: async ({ username }, ctx) => {
+    const r = await builder.buildProfileReadme(username, ctx?.model);
+    return `✅ Profile README updated: ${r.url}`;
+  },
+
   build_project: async ({ idea, private: priv }, ctx) => {
     const r = await builder.buildProject(idea, ctx?.model || 'meta-llama/llama-3.3-70b-instruct:free', { private: priv });
     return `${r.log.join('\n')}\n\nRepo: ${r.repo}`;
@@ -696,6 +706,8 @@ function getToolDefs() {
     fn('run_code', '▶️ Execute a code snippet in an isolated sandbox and return output', P({ language: S('python/javascript/node/bash/typescript'), code: S('Code to run') }, ['language','code'])),
     fn('ask_web_llm', '🌐 Ask Claude.ai, ChatGPT, Gemini, or Google AI Studio (incl. Gemma models) directly through a logged-in browser session — for a second opinion or a model you have no API key for', P({ provider: S('claude, chatgpt, gemini, or aistudio'), prompt: S('The question/prompt to send'), model: S('Only for aistudio: gemma-27b, gemma-9b, gemma-2b, gemini-flash, gemini-pro') }, ['provider','prompt'])),
     fn('webllm_login', '🌐 Open a visible browser window to log in to claude.ai/chatgpt.com/gemini once (session then persists)', P({ provider: S('claude, chatgpt, or gemini') }, ['provider'])),
+    fn('strengthen_profile', '💪 Audit AND fix every repo in a GitHub profile: adds missing descriptions, topics, README, LICENSE, CI — makes the whole profile look professional', P({ username: S('GitHub username'), limit: N('Max repos to process (default 15)') }, ['username'])),
+    fn('build_profile_readme', '👤 Write/update the special profile README shown on github.com/<username> — bio, tech badges, featured projects, stats card', P({ username: S('GitHub username') }, ['username'])),
     fn('build_project', '🚀 Design and ship a COMPLETE new open-source project (architecture, all files, README, tests, CI, LICENSE) to a brand new GitHub repo in one call', P({ idea: S('Description of the project to build'), private: B('Make repo private') }, ['idea'])),
     fn('analyze_image', '🖼️ Analyze/describe an image from a URL using vision AI', P({ image_url: S('Public image URL'), question: S('What to ask about the image') }, ['image_url'])),
     fn('web_search', '🌐 Search the web for information, docs, solutions', P({ query: S('Search query - be specific for better results'), num_results: N('Number of results (default 8)') }, ['query'])),

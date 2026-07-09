@@ -17,6 +17,8 @@ const STEP_STYLE = {
 }
 
 const QUICK_TASKS = [
+  { label: '💪 Strengthen My Profile', tmpl: 'Strengthen my entire GitHub profile ({owner}): audit every repo, fix missing descriptions/topics/README/LICENSE/CI, and write a great profile README' },
+  { label: '🚀 Build Something New', tmpl: 'Build and ship a complete new open-source project: ' },
   { label: '🐛 Solve Issue', tmpl: 'Solve GitHub issue #{n} in {owner}/{repo}: read the issue, understand the codebase, write the fix, create a branch, commit changes, and open a PR' },
   { label: '📋 Review PR', tmpl: 'Review PR #{n} in {owner}/{repo}: check code quality, bugs, security, and post a detailed review comment' },
   { label: '🔍 Audit Repo', tmpl: 'Audit the {owner}/{repo} repository: check for bugs, security issues, outdated deps, and create issues for each finding' },
@@ -97,7 +99,7 @@ export default function Agent() {
             ))}
           </div>
 
-          <textarea className="task-input" placeholder="Describe your task in detail. The agent will plan, research, and execute autonomously..." value={task} onChange={e => setTask(e.target.value)} rows={6} />
+          <textarea className="task-input" placeholder="Just tell it what you want in plain English — e.g. 'make my GitHub profile look professional' or 'build me a todo app and publish it'. No coding knowledge needed." value={task} onChange={e => setTask(e.target.value)} rows={6} />
 
           <div className="run-config">
             <div className="mode-toggle">
@@ -138,8 +140,8 @@ export default function Agent() {
           {steps.length === 0 && !running && (
             <div className="agent-empty">
               <div style={{ fontSize: 64 }}>🤖</div>
-              <h2>AI Dev Agent</h2>
-              <p>Autonomous agent with 50+ tools: GitHub, web search, code execution, file system, VSCode, and more.</p>
+              <h2>ARIA — Your AI Software Engineer</h2>
+              <p>Type what you want in plain English. ARIA plans, researches, writes code, and manages your GitHub like a human engineer — no coding knowledge needed.</p>
               <div className="cap-grid">
                 {['✅ Solve GitHub Issues', '✅ Create & merge PRs', '✅ Clone & edit repos', '✅ Search the web', '✅ Write & run code', '✅ Manage branches', '✅ Run CI/CD', '✅ Browse URLs', '✅ VSCode integration', '✅ Autonomous loop'].map(c => <span key={c} className="cap">{c}</span>)}
               </div>

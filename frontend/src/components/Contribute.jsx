@@ -11,6 +11,8 @@ const ACTIONS = [
   { id: 'add-contributing',icon:'🤝', label: 'Add CONTRIBUTING.md',    desc: 'Add contributing guide' },
   { id: 'add-templates',  icon: '📋', label: 'Add Issue Templates',    desc: 'Add bug/feature templates' },
   { id: 'build-project',  icon: '🚀', label: 'Build New OSS Project',  desc: 'Ship a complete new repo from an idea' },
+  { id: 'strengthen',     icon: '💪', label: 'Strengthen My Profile',  desc: 'Fix every repo: desc, topics, README, LICENSE, CI' },
+  { id: 'profile-readme', icon: '👤', label: 'Build Profile README',   desc: 'Write your github.com/you page' },
 ]
 
 export default function Contribute() {
@@ -29,13 +31,16 @@ export default function Contribute() {
 
   const run = async (actionId) => {
     const { owner, repo } = repoCtx
-    if (!owner || !repo) { notify('Set owner/repo in sidebar', 'error'); return }
+    const repoOptional = ['build-project', 'strengthen', 'profile-readme'].includes(actionId)
+    if (!owner || (!repoOptional && !repo)) { notify(repoOptional ? 'Set your GitHub username in sidebar' : 'Set owner/repo in sidebar', 'error'); return }
     setLoading(actionId); setResult(null); setLog([])
 
     let url, body
     if (actionId === 'find-issues') { url = `/api/contributor/find-issues/${owner}/${repo}?model=${model}`; body = null }
     else if (actionId === 'solve-issue') { url = '/api/contributor/solve-issue'; body = { owner, repo, issue_number: parseInt(issueNum), model } }
     else if (actionId === 'build-project') { url = '/api/builder/build'; body = { idea, model } }
+    else if (actionId === 'strengthen') { url = `/api/builder/strengthen/${owner}`; body = { model } }
+    else if (actionId === 'profile-readme') { url = `/api/builder/profile-readme/${owner}`; body = { model } }
     else { url = `/api/contributor/${actionId}`; body = { owner, repo, model } }
 
     try {

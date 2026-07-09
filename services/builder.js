@@ -85,19 +85,94 @@ async function buildProject(idea, model, opts = {}) {
   return { log, repo: repo.html_url, plan };
 }
 
-async function strengthenProfile(username, model) {
+async function strengthenProfile(username, model, opts = {}) {
+  const contributor = require('./contributor');
+  const log = [];
+  const push = (m) => { log.push(m); };
+  const usedModel = model || 'meta-llama/llama-3.3-70b-instruct:free';
+
+  push(`🔍 Scanning ${username}'s repos...`);
   const repos = await gh.getUserRepos(username);
   const results = [];
-  for (const r of repos.slice(0, 10)) {
+
+  for (const r of repos.slice(0, opts.limit || 15)) {
+    const owner = r.owner.login, name = r.name;
+    if (r.fork && !opts.includeForks) continue;
+    const fixed = [];
     try {
-      const info = await gh.getRepo(r.owner.login, r.name);
-      const gaps = [];
-      if (!info.description) gaps.push('missing description');
-      if (!info.has_wiki && info.open_issues_count === 0) gaps.push('no community docs');
-      results.push({ repo: r.name, stars: info.stargazers_count, gaps });
-    } catch {}
+      const info = await gh.getRepo(owner, name);
+
+      if (!info.description) {
+        const prompt = `One-line professional description (max 100 chars, no period at end) for a repo named "${name}", language ${info.language || 'unknown'}. Look at repo purpose from its name. Return ONLY the description text.`;
+        try {
+          const rr = await chat([{ role: 'user', content: prompt }], usedModel, [], null, { max_tokens: 100, temperature: 0.4 });
+          const desc = rr.choices[0].message.content.trim().replace(/^["']|["']$/g, '').slice(0, 120);
+          await gh.updateRepoSettings(owner, name, { description: desc });
+          fixed.push('description');
+        } catch {}
+      }
+
+      if (!info.topics || info.topics.length === 0) {
+        try {
+          const topics = [info.language, ...name.split(/[-_]/)].filter(Boolean).map(t => t.toLowerCase()).filter(t => /^[a-z0-9-]+$/.test(t)).slice(0, 6);
+          if (topics.length) { await gh.setRepoTopics(owner, name, topics); fixed.push('topics'); }
+        } catch {}
+      }
+
+      let readme = '';
+      try { readme = (await gh.getFile(owner, name, 'README.md')).content; } catch {}
+      if (!readme || readme.trim().length < 100) {
+        try { await contributor.improveReadme(owner, name, usedModel); fixed.push('README'); } catch {}
+      }
+
+      let hasLicense = false;
+      try { await gh.getFile(owner, name, 'LICENSE'); hasLicense = true; } catch {}
+      if (!hasLicense) {
+        try {
+          const mit = `MIT License\n\nCopyright (c) ${new Date().getFullYear()} ${username}\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED.\n`;
+          await gh.putFile(owner, name, 'LICENSE', mit, 'chore: add MIT license');
+          fixed.push('LICENSE');
+        } catch {}
+      }
+
+      let hasCI = false;
+      try { await gh.getFile(owner, name, '.github/workflows/ci.yml'); hasCI = true; } catch {}
+      if (!hasCI) {
+        try { await contributor.addCIWorkflow(owner, name, usedModel); fixed.push('CI'); } catch {}
+      }
+
+      push(`${fixed.length ? '✅' : 'ℹ️'} ${name}: ${fixed.length ? fixed.join(', ') : 'already solid'}`);
+      results.push({ repo: name, stars: info.stargazers_count, fixed });
+    } catch (e) { push(`❌ ${name}: ${e.message}`); }
   }
-  return results;
+
+  return { log, results };
 }
 
-module.exports = { architect, generateFile, buildProject, strengthenProfile };
+// Generates/updates the special <username>/<username> profile README shown on the GitHub profile page.
+async function buildProfileReadme(username, model) {
+  const usedModel = model || 'meta-llama/llama-3.3-70b-instruct:free';
+  const repos = await gh.getUserRepos(username);
+  const top = repos.filter(r => !r.fork).sort((a, b) => b.stargazers_count - a.stargazers_count).slice(0, 6);
+
+  const prompt = `Write a professional GitHub profile README.md for the user "${username}".
+Their notable repos: ${top.map(r => `${r.name} (${r.language || ''}, ⭐${r.stargazers_count}): ${r.description || ''}`).join(' | ')}
+
+Include: a strong intro line, tech stack badges (shields.io) inferred from their repo languages, a "Featured Projects" section linking the repos above, and a GitHub stats card (github-readme-stats.vercel.app). Keep it clean, no filler, no placeholder text like "[Your bio here]" — write real content based on the repo data given.
+Return ONLY the markdown.`;
+
+  const r = await chat([{ role: 'user', content: prompt }], usedModel, [], null, { max_tokens: 3000, temperature: 0.4 });
+  const readme = r.choices[0].message.content.replace(/^```[\w]*\n?/, '').replace(/\n?```$/, '');
+
+  let profileRepoExists = true;
+  try { await gh.getRepo(username, username); } catch { profileRepoExists = false; }
+  if (!profileRepoExists) await gh.createRepo(username, `${username}'s GitHub profile`, false);
+
+  let sha;
+  try { sha = (await gh.getFile(username, username, 'README.md')).sha; } catch {}
+  await gh.putFile(username, username, 'README.md', readme, 'docs: update profile README', sha);
+
+  return { url: `https://github.com/${username}`, readme: readme.slice(0, 500) };
+}
+
+module.exports = { architect, generateFile, buildProject, strengthenProfile, buildProfileReadme };

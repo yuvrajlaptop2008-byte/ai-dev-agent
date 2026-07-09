@@ -139,6 +139,14 @@
 - agent.js SYSTEM prompt: new "ENGINEER'S JUDGMENT" section — Conventional Commits, branch naming (feature//fix//chore/), PR standards (title/body/Closes #N/focused diffs), semver, self-review-before-PR mindset, repo hygiene defaults, match-existing-style-before-writing, real merge conflict resolution (not blind ours/theirs), root-cause debugging discipline.
 - Default fallback commit messages changed from generic "AI: automated commit"/"AI Agent: update" to Conventional Commits style ("chore: automated update" / "chore: update file") — only used when the agent doesn't supply its own message.
 
+## v16 (profile-strength = actionable, non-coder UX)
+- builder.js strengthenProfile() rewritten: was a read-only audit, now actually FIXES every repo — generates+sets missing description, infers+sets topics, calls contributor.improveReadme if README thin/missing, adds MIT LICENSE if absent, calls contributor.addCIWorkflow if no CI. Returns a log of what was fixed per repo.
+- builder.js buildProfileReadme(username, model): writes the special <username>/<username> profile README (creates that repo if it doesn't exist) — bio, tech badges, featured projects pulled from real repo data, stats card. Real content, not placeholders.
+- routes/builder.js: POST /strengthen/:username (was GET), POST /profile-readme/:username
+- Agent tools: strengthen_profile, build_profile_readme — ARIA can run these mid-task on its own.
+- Contribute.jsx: added Strengthen My Profile + Build Profile README action cards; run() guard now only requires repo for repo-scoped actions (build-project/strengthen/profile-readme only need owner/username).
+- Agent.jsx: QUICK_TASKS leads with '💪 Strengthen My Profile' and '🚀 Build Something New'; task placeholder and empty-state copy rewritten for non-coders ("no coding knowledge needed", plain-English framing) — this + the always-available quick-task buttons are the primary "just give a command" UX per user's ask.
+
 ## Pending / Ideas Not Yet Built
 - WebSocket reconnect/backoff UI indicator
 
