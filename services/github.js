@@ -197,14 +197,33 @@ async function gitOps(repoDir, operation, args = {}) {
     case 'status': return git.status();
     case 'add': return git.add(args.files || '.');
     case 'commit': return git.commit(args.message || 'AI: automated commit');
-    case 'push': return git.push(args.remote || 'origin', args.branch || 'main');
+    case 'push': return git.push(args.remote || 'origin', args.branch || 'main', args.force ? ['--force'] : []);
     case 'pull': return git.pull(args.remote || 'origin', args.branch || 'main');
+    case 'fetch': return git.fetch(args.remote || 'origin');
     case 'checkout': return git.checkout(args.branch);
     case 'checkoutNew': return git.checkoutLocalBranch(args.branch);
+    case 'branch': return git.branch();
+    case 'deleteBranch': return git.deleteLocalBranch(args.branch, args.force);
+    case 'merge': return git.merge([args.branch]);
+    case 'rebase': return git.rebase([args.branch]);
+    case 'cherryPick': return git.raw(['cherry-pick', args.sha]);
+    case 'tag': return git.addTag(args.tag);
+    case 'tags': return git.tags();
+    case 'pushTags': return git.pushTags(args.remote || 'origin');
+    case 'reset': return git.reset(args.mode ? [args.mode] : ['--mixed']);
+    case 'revert': return git.raw(['revert', '--no-edit', args.sha]);
     case 'log': return git.log({ maxCount: args.n || 10 });
     case 'diff': return git.diff(args.files ? [args.files] : []);
+    case 'diffStaged': return git.diff(['--staged']);
     case 'stash': return git.stash();
-    default: throw new Error(`Unknown git op: ${operation}`);
+    case 'stashPop': return git.stash(['pop']);
+    case 'remote': return git.getRemotes(true);
+    case 'addRemote': return git.addRemote(args.name || 'origin', args.url);
+    case 'blame': return git.raw(['blame', args.file]);
+    case 'show': return git.show([args.sha || 'HEAD']);
+    case 'clean': return git.clean('f', args.dirs ? ['-d'] : []);
+    case 'raw': return git.raw(args.command.split(' '));
+    default: throw new Error(`Unknown git op: ${operation}. Use 'raw' with {command:"..."} for anything else.`);
   }
 }
 

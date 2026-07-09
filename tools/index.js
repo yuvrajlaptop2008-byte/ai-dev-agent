@@ -217,6 +217,25 @@ const T = {
     return sh(`(${command} > /tmp/app.log 2>&1 &) ; sleep 1; echo "launched: ${command}"`);
   },
 
+  clipboard_copy: async ({ text }) => {
+    const cmd = process.platform === 'darwin' ? 'pbcopy' : process.platform === 'win32' ? 'clip' : 'xclip -selection clipboard 2>/dev/null || xsel --clipboard --input 2>/dev/null';
+    try {
+      const { spawn } = require('child_process');
+      await new Promise((resolve, reject) => {
+        const p = spawn(cmd, { shell: true });
+        p.stdin.write(text); p.stdin.end();
+        p.on('close', code => code === 0 ? resolve() : reject(new Error(`exit ${code}`)));
+        p.on('error', reject);
+      });
+      return `✅ Copied ${text.length} chars to clipboard`;
+    } catch (e) { return `Clipboard unavailable in this environment (${e.message}). Returning text instead:\n${text}`; }
+  },
+
+  clipboard_paste: async () => {
+    const cmd = process.platform === 'darwin' ? 'pbpaste' : process.platform === 'win32' ? 'powershell -command "Get-Clipboard"' : 'xclip -selection clipboard -o 2>/dev/null || xsel --clipboard --output 2>/dev/null';
+    return sh(cmd).catch(() => 'Clipboard unavailable in this environment');
+  },
+
   browser_automate: async ({ url, actions }) => {
     try {
       const puppeteer = require('puppeteer');
@@ -522,6 +541,13 @@ const T = {
     return JSON.stringify(r, null, 2).slice(0, 4000);
   },
 
+  git_terminal: async ({ repo_dir, command }) => {
+    // Raw git via the real terminal — covers anything git_op doesn't enumerate.
+    const dir = abs(repo_dir);
+    await sh(`git config user.email "agent@ai-dev.local" && git config user.name "AI Dev Agent"`, dir).catch(() => {});
+    return sh(`git ${command}`, dir, 45000);
+  },
+
   // ── 11. VSCODE ──────────────────────────────────────
   vscode_open: async ({ path: p, line }) => {
     if (line) return vscode.openAtLine(p || WORKSPACE, line);
@@ -661,6 +687,8 @@ function getToolDefs() {
     fn('create_folder', '📁 Create a folder/directory', P({ path: S('Folder path') }, ['path'])),
     fn('open_url', '🌐 Open a URL in the default browser on this machine', P({ url: S('URL to open') }, ['url'])),
     fn('open_app', '🖥️ Launch an application/command on this machine', P({ command: S('Shell command to launch the app') }, ['command'])),
+    fn('clipboard_copy', '📋 Copy text to the system clipboard', P({ text: S('Text to copy') }, ['text'])),
+    fn('clipboard_paste', '📋 Read current clipboard contents', P({})),
     fn('browser_automate', '🌐 Automate a real browser: navigate, click, type, screenshot (requires puppeteer + display; falls back gracefully)', P({ url: S('URL to visit'), actions: A('Array of action objects: {type:click/type/wait/screenshot, selector, text, ms}') }, ['url'])),
     fn('mcp_list_servers', '🔌 List configured MCP servers and their status', P({})),
     fn('mcp_call', '🔌 Call a tool on a connected MCP server (auto-selects by name match)', P({ server_name: S('Server name or partial match'), tool: S('Tool name to call on that server'), args: S('Arguments object as needed by that tool') }, ['server_name','tool'])),
@@ -716,7 +744,8 @@ function getToolDefs() {
 
     // GIT LOCAL
     fn('git_clone', '📥 Clone a GitHub repo locally to the workspace', P({ owner: S('Owner'), repo: S('Repo'), dir: S('Target directory (optional)') }, ['owner', 'repo'])),
-    fn('git_op', '🔀 Git operations on local repo: status/add/commit/push/pull/checkout/checkoutNew/log/diff/stash', P({ repo_dir: S('Local repo directory path'), operation: S('Operation: status/add/commit/push/pull/checkout/checkoutNew/log/diff/stash'), args: S('JSON string with args like {"message":"...", "branch":"...", "files":"..."}') }, ['repo_dir', 'operation'])),
+    fn('git_op', '🔀 Structured git operations: status/add/commit/push/pull/fetch/checkout/checkoutNew/branch/deleteBranch/merge/rebase/cherryPick/tag/tags/pushTags/reset/revert/log/diff/diffStaged/stash/stashPop/remote/addRemote/blame/show/clean/raw', P({ repo_dir: S('Local repo directory path'), operation: S('Operation name (see list above; use "raw" with {command} for anything else)'), args: S('JSON string: {message, branch, files, remote, sha, tag, mode, force, url, name, dirs, file, command}') }, ['repo_dir', 'operation'])),
+    fn('git_terminal', '🔀⌨️ Run ANY raw git command directly in a repo via the terminal (most flexible option — use when git_op doesn\'t cover what you need)', P({ repo_dir: S('Local repo directory'), command: S('Git subcommand and args, e.g. "log --oneline -5" or "submodule update --init"') }, ['repo_dir', 'command'])),
 
     // VSCODE
     fn('vscode_open', '💻 Open file or path in VS Code', P({ path: S('Path to open (file or directory)'), line: N('Line number to jump to') })),

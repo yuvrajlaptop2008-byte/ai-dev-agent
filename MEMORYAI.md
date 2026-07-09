@@ -128,6 +128,13 @@
 - findGoodIssues: removed leftover deepseek-r1:free default (already banned repo-wide in v13/v14, this was a straggler).
 - Net effect: issue→branch→commit→PR→issue-comment is now a real, verifiable pipeline instead of one that looked complete but silently no-op'd on any file with a quote or backtick in it (i.e. almost all real code).
 
+## v14 (Google AI Studio, git/GitHub/terminal/VS Code deepening, clipboard)
+- webllm.js: added aistudio provider (aistudio.google.com, Gemma models via browser session). Refactored SITES-driven ask/login/isLoggedIn into shared launch() helper (DRY, smaller diffs going forward). selectModel() best-effort clicks AI Studio's model dropdown and picks the option matching modelHint ('Gemma') — non-fatal if UI selectors have drifted.
+- Settings.jsx provider list now ['claude','chatgpt','gemini','aistudio'].
+- github.js gitOps() expanded: fetch, deleteBranch, merge, rebase, cherryPick, tag/tags/pushTags, reset, revert, diffStaged, stashPop, remote/addRemote, blame, show, clean, raw (arbitrary git command via simple-git).
+- New tool git_terminal(repo_dir, command) — raw git via actual shell, for anything git_op doesn't enumerate. Three-layer git/GitHub strategy documented in agent.js SYSTEM prompt: github_* API tools / git_op structured / git_terminal+bash raw shell — pick whichever fits, clone+vscode_setup_project pairing encouraged.
+- New tools clipboard_copy/clipboard_paste (pbcopy/pbpaste, clip/Get-Clipboard, xclip/xsel — degrades gracefully with a message if no display/clipboard tool present).
+
 ## Pending / Ideas Not Yet Built
 - WebSocket reconnect/backoff UI indicator
 
