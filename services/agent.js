@@ -53,6 +53,9 @@ Prefer github_put_file for single-file edits; clone + git_op/git_terminal + push
 ## VS CODE
 Use vscode_open/vscode_setup_project/vscode_create_workspace whenever you create or clone a project — leave the workspace in a state a human could immediately continue in.
 
+## LEARNING — you grow over time
+You have a persistent skill memory. If you're given "relevant experience from past tasks" at the start, apply it. On genuinely novel task types, call \`recall_skills\` yourself early on. You don't need to manually call \`learn_skill\` — successful runs are learned from automatically — but use it explicitly if you discover something important mid-task that's worth remembering beyond this run.
+
 ## MCP
 If a task needs a capability you don't have natively, check available MCP servers and use the relevant one automatically — don't wait to be told.
 
@@ -88,6 +91,15 @@ async function runAgent(data, socket) {
   db.prepare('INSERT INTO agent_runs VALUES (?,?,?,?,?,unixepoch())').run(runId, task, 'running', '[]', null);
 
   const messages = [{ role: 'user', content: task }];
+  if (!isFast) {
+    try {
+      const skills = await brain.getRelevantSkills(task, 3);
+      if (skills.length) {
+        const note = skills.map(s => `• ${s.approach}${s.pitfalls ? ` (avoid: ${s.pitfalls})` : ''}`).join('\n');
+        messages.push({ role: 'user', content: `Relevant experience from past similar tasks — apply what's useful:\n${note}` });
+      }
+    } catch {}
+  }
   return coreLoop({ runId, task, ctx, isFast, messages, verified: false }, socket);
 }
 
@@ -196,6 +208,10 @@ async function coreLoop({ runId, task, ctx, isFast, messages, verified }, socket
     const status = runState.aborted ? 'stopped' : (iteration >= HARD_CAP ? 'stopped' : 'done');
     db.prepare('UPDATE agent_runs SET status=?,result=? WHERE id=?').run(status, result, runId);
     if (socket) socket.emit('agent-done', { runId, result, steps, stopped: status === 'stopped' });
+
+    if (status === 'done' && iteration > 2) {
+      brain.learnSkill(task, result, ctx.model).catch(() => {}); // background — don't block or fail the response on this
+    }
 
   } catch (e) {
     const err = `❌ ${e.message}`;

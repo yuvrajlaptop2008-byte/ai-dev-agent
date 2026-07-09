@@ -12,6 +12,7 @@ const SITES = {
   chatgpt:  { url: 'https://chatgpt.com/',                      input: '#prompt-textarea',             response: 'div[data-message-author-role="assistant"]' },
   gemini:   { url: 'https://gemini.google.com/app',             input: 'div[contenteditable="true"]',  response: 'message-content' },
   aistudio: { url: 'https://aistudio.google.com/app/prompts/new_chat', input: 'textarea',               response: 'ms-chat-turn:last-of-type .turn-content', modelHint: 'Gemma' },
+  glm:      { url: 'https://chat.z.ai/',                        input: 'textarea',                     response: '.message-content, .markdown-body' },
 };
 
 let _puppeteer = null;

@@ -9,12 +9,14 @@ export default function Settings() {
   const [refreshing, setRefreshing] = useState(false)
   const refreshModels = async () => { setRefreshing(true); await fetch(`${API}/models/refresh`, { method: 'POST' }); notify('✅ Model list refreshed', 'success'); setRefreshing(false) }
   const [webllmStatus, setWebllmStatus] = useState({})
+  const [skills, setSkills] = useState([])
   const loginWeb = async (provider) => { await fetch(`${API}/webllm/login/${provider}`, { method: 'POST' }); notify(`Browser window opened for ${provider} — log in there`, 'success') }
 
   useEffect(() => {
     fetch(`${API}/memory`).then(r => r.json()).then(setS)
     fetch(`${API}/brain/memory`).then(r => r.json()).then(d => setMemData(d.result)).catch(() => {})
     fetch(`${API}/webllm/status`).then(r=>r.json()).then(setWebllmStatus).catch(()=>{})
+    fetch(`${API}/brain/skills`).then(r=>r.json()).then(d=>setSkills(d.result||[])).catch(()=>{})
   }, [])
 
   const save = async () => {
@@ -48,7 +50,7 @@ export default function Settings() {
       <div className="panel">
         <div className="panel-title">🌐 Web LLMs (Claude / ChatGPT / Gemini)</div>
         <p style={{fontSize:12,color:'var(--text2)',marginBottom:10}}>Log in once per provider (opens a real browser window). Session persists — no API key needed.</p>
-        {['claude','chatgpt','gemini','aistudio'].map(p => (
+        {['claude','chatgpt','gemini','aistudio','glm'].map(p => (
           <div key={p} style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
             <span style={{width:80,fontSize:13,textTransform:'capitalize'}}>{p}</span>
             <span style={{fontSize:11,color: webllmStatus[p]==='session saved'?'var(--green)':'var(--text3)'}}>{webllmStatus[p]||'unknown'}</span>
@@ -92,6 +94,18 @@ export default function Settings() {
           {saved ? '✅ Saved!' : '💾 Save Settings'}
         </button>
         <button className="btn" onClick={refreshModels} disabled={refreshing} style={{ marginTop: 12, marginLeft: 8 }}>{refreshing ? '⏳ Refreshing...' : '🔄 Refresh Model List'}</button>
+      </div>
+
+      <div className="panel">
+        <div className="panel-title">🎓 Learned Skills ({skills.length})</div>
+        <p style={{fontSize:12,color:'var(--text2)',marginBottom:10}}>ARIA extracts a reusable skill from every task it completes, and recalls the relevant ones before starting similar work — this is how it improves over time.</p>
+        {skills.length ? skills.map((s,i) => (
+          <div key={i} style={{background:'var(--bg3)',padding:'8px 10px',borderRadius:6,marginBottom:6}}>
+            <div style={{fontSize:13,fontWeight:600}}>{s.skill_name} <span style={{fontSize:11,color:'var(--text3)',fontWeight:400}}>used {s.uses||1}x</span></div>
+            <div style={{fontSize:12,color:'var(--text2)',marginTop:2}}>{s.approach}</div>
+            {s.pitfalls && <div style={{fontSize:11,color:'var(--yellow)',marginTop:2}}>⚠️ {s.pitfalls}</div>}
+          </div>
+        )) : <div style={{color:'var(--text3)',fontSize:13,marginBottom:16}}>No skills learned yet — completes tasks to start building them</div>}
       </div>
 
       <div className="panel">

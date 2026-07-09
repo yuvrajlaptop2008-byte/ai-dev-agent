@@ -147,6 +147,16 @@
 - Contribute.jsx: added Strengthen My Profile + Build Profile README action cards; run() guard now only requires repo for repo-scoped actions (build-project/strengthen/profile-readme only need owner/username).
 - Agent.jsx: QUICK_TASKS leads with '💪 Strengthen My Profile' and '🚀 Build Something New'; task placeholder and empty-state copy rewritten for non-coders ("no coding knowledge needed", plain-English framing) — this + the always-available quick-task buttons are the primary "just give a command" UX per user's ask.
 
+## v17 (GLM/z.ai provider, self-evolving skill memory, fixed a leftover paid-model bug)
+- webllm.js: added glm provider (chat.z.ai, best-effort selectors like the others). SITES now: claude/chatgpt/gemini/aistudio/glm. Settings.jsx provider list, ask_web_llm/webllm_login tool descriptions updated to match.
+- BUGFIX: brain.js selectBestModel() still referenced paid models (deepseek-coder-v2 no :free, anthropic/claude-3-opus, anthropic/claude-3-haiku) — normalizeModel() in openrouter.js silently caught these but it was sloppy/wrong. Rewritten fully free-only.
+- REAL FEATURE — self-evolving skill memory (brain.js): learnSkill(task, outcome, model) extracts {skill_name, applies_to, approach, pitfalls, tools_used, keywords} via LLM after a task and saves to memory category 'skills'. getRelevantSkills(task) keyword-matches against saved skills, returns top matches, and increments their `uses` counter each time they're recalled (reinforcement — more-used skills surface as more battle-tested). skillsSummary() lists all learned skills sorted by usage.
+- agent.js: runAgent() now injects "relevant experience from past similar tasks" into fresh (non-fast) runs before the task starts, using getRelevantSkills(). On successful completion (status 'done', >2 iterations) fires brain.learnSkill() in the background (non-blocking, failure-safe) — this is the actual learn→recall→reinforce loop, not just a design intent.
+- New agent tools: learn_skill (explicit save), recall_skills (explicit check) — for when the agent wants to consult/store learning mid-task itself, on top of the automatic hook.
+- SYSTEM prompt: new "LEARNING" section explaining the skill memory to the agent itself.
+- Settings.jsx: new "🎓 Learned Skills" panel — shows every learned skill, its approach, pitfalls, and use-count. This is the visible "growing over time" the user can watch happen.
+- routes/brain.js: GET /skills
+
 ## Pending / Ideas Not Yet Built
 - WebSocket reconnect/backoff UI indicator
 

@@ -35,7 +35,7 @@ const READ_ONLY_TOOLS = new Set([
   'search_npm','search_pypi','fetch_github_readme','fetch_docs','fetch_api','analyze_image',
   'github_get_issue','github_list_issues','github_get_file','github_list_files','github_list_branches',
   'github_list_prs','github_get_repo','github_search_code','github_search_repos','github_list_commits',
-  'github_list_workflows','github_workflow_runs','recall','search_memory','analyze_code','vscode_list_extensions','github_whoami','github_list_my_repos','mcp_list_servers'
+  'github_list_workflows','github_workflow_runs','recall','search_memory','analyze_code','vscode_list_extensions','github_whoami','github_list_my_repos','mcp_list_servers','recall_skills'
 ]);
 
 const T = {
@@ -80,6 +80,16 @@ const T = {
   search_memory: async ({ query }) => {
     const r = await brain.searchMemory(query);
     return r.length ? JSON.stringify(r, null, 2) : 'No memory matches found';
+  },
+
+  learn_skill: async ({ task_type, outcome }, ctx) => {
+    const skill = await brain.learnSkill(task_type, outcome, ctx?.model);
+    return skill ? `✅ Learned skill: ${skill.skill_name}` : '⚠️ Could not extract skill';
+  },
+
+  recall_skills: async ({ task }) => {
+    const skills = await brain.getRelevantSkills(task, 5);
+    return skills.length ? skills.map(s => `${s.skill_name}: ${s.approach}${s.pitfalls ? ` (avoid: ${s.pitfalls})` : ''}`).join('\n') : 'No relevant skills learned yet for this type of task';
   },
 
   // ── 3. BASH / SHELL ───────────────────────────────────
@@ -671,6 +681,8 @@ function getToolDefs() {
     fn('remember', '💾 Store information in persistent memory for later use', P({ key: S('Memory key'), value: S('Value to store'), category: S('Category: general/code/research/tasks') }, ['key', 'value'])),
     fn('recall', '🔍 Retrieve stored memory', P({ key: S('Key to retrieve (* for all)'), category: S('Category (* for all)') })),
     fn('search_memory', '🔎 Search through all memories', P({ query: S('Search query') }, ['query'])),
+    fn('learn_skill', '🎓 Explicitly save a learned approach as a reusable skill for future similar tasks', P({ task_type: S('What kind of task this applies to'), outcome: S('What worked, in detail') }, ['task_type','outcome'])),
+    fn('recall_skills', '🎓 Check what skills you\'ve learned that are relevant to a task before starting', P({ task: S('The task to check skills for') }, ['task'])),
 
     // SHELL
     fn('bash', '⚡ Execute shell/bash commands. Use for everything: install packages, run scripts, git, build, test, any CLI.', P({ command: S('Command to run'), cwd: S('Working directory (relative to workspace or absolute path)'), timeout_ms: N('Timeout in ms (default 45000)') }, ['command'])),
@@ -688,7 +700,7 @@ function getToolDefs() {
 
     // WEB
     fn('github_whoami', '🐙 Get authenticated GitHub account info', P({})),
-    fn('github_list_my_repos','mcp_list_servers', '🐙 List all repos in your own GitHub account', P({ type: S('all/owner/member') })),
+    fn('github_list_my_repos','mcp_list_servers','recall_skills', '🐙 List all repos in your own GitHub account', P({ type: S('all/owner/member') })),
     fn('github_delete_repo', '🐙 Permanently delete a repository', P({ owner: S('Owner'), repo: S('Repo') }, ['owner','repo'])),
     fn('github_update_repo', '🐙 Update repo settings (description, homepage, visibility, features)', P({ owner: S('Owner'), repo: S('Repo'), description: S('New description'), homepage: S('Homepage URL'), private: B('Private'), has_issues: B('Enable issues'), has_wiki: B('Enable wiki') })),
     fn('github_add_collaborator', '🐙 Add a collaborator to a repo', P({ owner: S('Owner'), repo: S('Repo'), username: S('GitHub username'), permission: S('pull/push/admin') }, ['username'])),
@@ -700,12 +712,12 @@ function getToolDefs() {
     fn('clipboard_copy', '📋 Copy text to the system clipboard', P({ text: S('Text to copy') }, ['text'])),
     fn('clipboard_paste', '📋 Read current clipboard contents', P({})),
     fn('browser_automate', '🌐 Automate a real browser: navigate, click, type, screenshot (requires puppeteer + display; falls back gracefully)', P({ url: S('URL to visit'), actions: A('Array of action objects: {type:click/type/wait/screenshot, selector, text, ms}') }, ['url'])),
-    fn('mcp_list_servers', '🔌 List configured MCP servers and their status', P({})),
+    fn('mcp_list_servers','recall_skills', '🔌 List configured MCP servers and their status', P({})),
     fn('mcp_call', '🔌 Call a tool on a connected MCP server (auto-selects by name match)', P({ server_name: S('Server name or partial match'), tool: S('Tool name to call on that server'), args: S('Arguments object as needed by that tool') }, ['server_name','tool'])),
     fn('delegate_task', '🧩 Delegate an independent sub-task to a separate mini-agent (keeps your own context lean, runs in fast mode, returns final result only)', P({ task: S('The self-contained sub-task to delegate') }, ['task'])),
     fn('run_code', '▶️ Execute a code snippet in an isolated sandbox and return output', P({ language: S('python/javascript/node/bash/typescript'), code: S('Code to run') }, ['language','code'])),
-    fn('ask_web_llm', '🌐 Ask Claude.ai, ChatGPT, Gemini, or Google AI Studio (incl. Gemma models) directly through a logged-in browser session — for a second opinion or a model you have no API key for', P({ provider: S('claude, chatgpt, gemini, or aistudio'), prompt: S('The question/prompt to send'), model: S('Only for aistudio: gemma-27b, gemma-9b, gemma-2b, gemini-flash, gemini-pro') }, ['provider','prompt'])),
-    fn('webllm_login', '🌐 Open a visible browser window to log in to claude.ai/chatgpt.com/gemini once (session then persists)', P({ provider: S('claude, chatgpt, or gemini') }, ['provider'])),
+    fn('ask_web_llm', '🌐 Ask Claude.ai, ChatGPT, Gemini, Google AI Studio (Gemma), or GLM (z.ai) directly through a logged-in browser session — for a second opinion or a model you have no API key for', P({ provider: S('claude, chatgpt, gemini, aistudio, or glm'), prompt: S('The question/prompt to send') }, ['provider','prompt'])),
+    fn('webllm_login', '🌐 Open a visible browser window to log in to claude.ai/chatgpt.com/gemini/aistudio/z.ai once (session then persists)', P({ provider: S('claude, chatgpt, gemini, aistudio, or glm') }, ['provider'])),
     fn('strengthen_profile', '💪 Audit AND fix every repo in a GitHub profile: adds missing descriptions, topics, README, LICENSE, CI — makes the whole profile look professional', P({ username: S('GitHub username'), limit: N('Max repos to process (default 15)') }, ['username'])),
     fn('build_profile_readme', '👤 Write/update the special profile README shown on github.com/<username> — bio, tech badges, featured projects, stats card', P({ username: S('GitHub username') }, ['username'])),
     fn('build_project', '🚀 Design and ship a COMPLETE new open-source project (architecture, all files, README, tests, CI, LICENSE) to a brand new GitHub repo in one call', P({ idea: S('Description of the project to build'), private: B('Make repo private') }, ['idea'])),
@@ -763,7 +775,7 @@ function getToolDefs() {
     fn('vscode_open', '💻 Open file or path in VS Code', P({ path: S('Path to open (file or directory)'), line: N('Line number to jump to') })),
     fn('vscode_open_folder', '💻 Open a folder as VS Code workspace', P({ path: S('Folder path') })),
     fn('vscode_install_extension', '💻 Install a VS Code extension', P({ extension_id: S('Extension ID like esbenp.prettier-vscode') }, ['extension_id'])),
-    fn('vscode_list_extensions','github_whoami','github_list_my_repos','mcp_list_servers', '💻 List installed VS Code extensions', P({})),
+    fn('vscode_list_extensions','github_whoami','github_list_my_repos','mcp_list_servers','recall_skills', '💻 List installed VS Code extensions', P({})),
     fn('vscode_create_workspace', '💻 Create a .code-workspace file', P({ name: S('Workspace name'), folders: A('Array of folder paths') }, ['name'])),
     fn('vscode_setup_project', '💻 Full VS Code project setup: settings, launch, tasks, snippets, workspace', P({ path: S('Project directory'), type: S('Project type: node/python/react/express') })),
     fn('vscode_create_launch', '💻 Create .vscode/launch.json for debugging', P({ path: S('Project directory'), configs: S('Custom launch configs as JSON string') })),

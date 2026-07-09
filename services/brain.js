@@ -226,13 +226,81 @@ Be specific with line numbers and concrete fixes.`;
 }
 
 // ─── SMART ROUTING ────────────────────────────────────────
-function selectBestModel(task, availableModels) {
-  const t = task.toLowerCase();
-  if (t.includes('code') || t.includes('bug') || t.includes('fix') || t.includes('implement')) return 'deepseek/deepseek-coder-v2';
-  if (t.includes('reason') || t.includes('analyze') || t.includes('complex') || t.includes('think')) return 'anthropic/claude-3-opus';
+function selectBestModel(task) {
+  const t = (task || '').toLowerCase();
+  if (t.includes('code') || t.includes('bug') || t.includes('fix') || t.includes('implement')) return 'qwen/qwen-2.5-coder-32b-instruct:free';
+  if (t.includes('reason') || t.includes('analyze') || t.includes('complex') || t.includes('think')) return 'qwen/qwen3-235b-a22b:free';
   if (t.includes('search') || t.includes('research') || t.includes('find')) return 'meta-llama/llama-3.3-70b-instruct:free';
-  if (t.includes('quick') || t.includes('simple') || t.includes('list')) return 'anthropic/claude-3-haiku';
-  return 'meta-llama/llama-3.3-70b-instruct:free'; // default
+  if (t.includes('quick') || t.includes('simple') || t.includes('list')) return 'google/gemma-3-27b-it:free';
+  return 'meta-llama/llama-3.3-70b-instruct:free';
 }
 
-module.exports = { deepThink, createPlan, decide, synthesizeResearch, saveMemory, getMemory, searchMemory, saveTask, getTasks, analyzeCode, selectBestModel };
+// ─── SKILL LEARNING — self-improving memory ────────────────
+// After a task succeeds, extract a reusable "skill" (pattern + approach + pitfalls)
+// and store it. Before similar future tasks, relevant skills are recalled and fed
+// back in as guidance — this is how the agent gets better over time.
+
+function taskFingerprint(task) {
+  return (task || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 3).slice(0, 12);
+}
+
+async function learnSkill(task, outcomeSummary, model) {
+  const prompt = `A task just completed successfully. Extract a REUSABLE skill from it — something that will help with similar future tasks.
+
+Task: ${task}
+What happened: ${outcomeSummary?.slice(0, 2000)}
+
+Return JSON only:
+{
+  "skill_name": "short-kebab-case-name",
+  "applies_to": "what kind of future tasks this helps with",
+  "approach": "the key steps/strategy that worked, in 2-4 sentences",
+  "pitfalls": "anything that went wrong or should be avoided next time, or empty string",
+  "tools_used": ["tool1","tool2"]
+}`;
+  try {
+    const r = await chat([{ role: 'user', content: prompt }], model || 'meta-llama/llama-3.3-70b-instruct:free', [], null, { max_tokens: 800, temperature: 0.2 });
+    let txt = r.choices[0].message.content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const skill = JSON.parse(txt);
+    skill.keywords = taskFingerprint(task);
+    skill.uses = 1;
+    await saveMemory(skill.skill_name || `skill_${Date.now()}`, skill, 'skills');
+    return skill;
+  } catch { return null; }
+}
+
+async function getRelevantSkills(task, limit = 3) {
+  await ensureDir();
+  const file = path.join(BRAIN_DIR, 'memory.json');
+  let mem = {};
+  try { mem = JSON.parse(await fs.readFile(file, 'utf8')); } catch { return []; }
+  const skills = mem.skills || {};
+  const taskWords = new Set(taskFingerprint(task));
+  const scored = Object.entries(skills).map(([name, entry]) => {
+    const s = entry.value || {};
+    const kw = s.keywords || [];
+    const overlap = kw.filter(w => taskWords.has(w)).length;
+    return { name, score: overlap, skill: s };
+  }).filter(x => x.score > 0).sort((a, b) => b.score - a.score);
+  const top = scored.slice(0, limit);
+  // bump usage count on recalled skills (reinforcement — used skills become "stronger"/more trusted over time)
+  for (const t of top) {
+    try {
+      t.skill.uses = (t.skill.uses || 1) + 1;
+      await saveMemory(t.name, t.skill, 'skills');
+    } catch {}
+  }
+  return top.map(t => t.skill);
+}
+
+async function skillsSummary() {
+  await ensureDir();
+  const file = path.join(BRAIN_DIR, 'memory.json');
+  try {
+    const mem = JSON.parse(await fs.readFile(file, 'utf8'));
+    const skills = Object.values(mem.skills || {}).map(e => e.value);
+    return skills.sort((a, b) => (b.uses || 0) - (a.uses || 0));
+  } catch { return []; }
+}
+
+module.exports = { deepThink, createPlan, decide, synthesizeResearch, saveMemory, getMemory, searchMemory, saveTask, getTasks, analyzeCode, selectBestModel, learnSkill, getRelevantSkills, skillsSummary };

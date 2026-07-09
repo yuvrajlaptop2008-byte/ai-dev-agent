@@ -16,6 +16,7 @@ router.post('/analyze', h(req => brain.analyzeCode(req.body.code, req.body.langu
 router.get('/memory', h(() => brain.getMemory('*', '*')));
 router.post('/memory', h(req => brain.saveMemory(req.body.key, req.body.value, req.body.category)));
 router.get('/tasks', h(() => brain.getTasks()));
+router.get('/skills', h(() => brain.skillsSummary()));
 router.post('/search', h(req => browser.search(req.body.query, req.body.num)));
 router.post('/fetch', h(req => browser.fetchPage(req.body.url)));
 
