@@ -1,0 +1,286 @@
+const { Octokit } = require('@octokit/rest');
+const simpleGit = require('simple-git');
+const path = require('path');
+const fs = require('fs').promises;
+const { exec } = require('child_process');
+const { promisify } = require('util');
+const execAsync = promisify(exec);
+
+const getKey = () => process.env.GITHUB_TOKEN;
+let _octo;
+const getOctokit = () => {
+  if (_octo) return _octo;
+  _octo = new Octokit({ auth: getKey(), retry: { enabled: true, retries: 3 }, throttle: { onRateLimit: () => true, onSecondaryRateLimit: () => true } });
+  return _octo;
+};
+
+// ─── ISSUES ────────────────────────────────────────────────
+async function getIssue(owner, repo, n) {
+  const ok = getOctokit();
+  const { data } = await ok.issues.get({ owner, repo, issue_number: +n });
+  const comments = await ok.issues.listComments({ owner, repo, issue_number: +n, per_page: 20 });
+  return { ...data, comments: comments.data };
+}
+async function listIssues(owner, repo, state = 'open', labels = '') {
+  const { data } = await getOctokit().issues.listForRepo({ owner, repo, state, labels, per_page: 50 });
+  return data;
+}
+async function createIssue(owner, repo, title, body, labels = [], assignees = []) {
+  const { data } = await getOctokit().issues.create({ owner, repo, title, body, labels, assignees });
+  return data;
+}
+async function updateIssue(owner, repo, n, updates) {
+  const { data } = await getOctokit().issues.update({ owner, repo, issue_number: +n, ...updates });
+  return data;
+}
+async function closeIssue(owner, repo, n, comment) {
+  const ok = getOctokit();
+  if (comment) await ok.issues.createComment({ owner, repo, issue_number: +n, body: comment });
+  return ok.issues.update({ owner, repo, issue_number: +n, state: 'closed' });
+}
+async function commentIssue(owner, repo, n, body) {
+  const { data } = await getOctokit().issues.createComment({ owner, repo, issue_number: +n, body });
+  return data;
+}
+async function addLabels(owner, repo, n, labels) {
+  return getOctokit().issues.addLabels({ owner, repo, issue_number: +n, labels });
+}
+async function assignIssue(owner, repo, n, assignees) {
+  return getOctokit().issues.addAssignees({ owner, repo, issue_number: +n, assignees });
+}
+
+// ─── PULL REQUESTS ─────────────────────────────────────────
+async function listPRs(owner, repo, state = 'open') {
+  const { data } = await getOctokit().pulls.list({ owner, repo, state, per_page: 30 });
+  return data;
+}
+async function createPR(owner, repo, title, body, head, base = 'main') {
+  const { data } = await getOctokit().pulls.create({ owner, repo, title, body, head, base });
+  return data;
+}
+async function mergePR(owner, repo, n, method = 'squash') {
+  const { data } = await getOctokit().pulls.merge({ owner, repo, pull_number: +n, merge_method: method });
+  return data;
+}
+async function getPRDiff(owner, repo, n) {
+  const { data } = await getOctokit().pulls.get({ owner, repo, pull_number: +n, mediaType: { format: 'diff' } });
+  return data;
+}
+async function reviewPR(owner, repo, n, body, event = 'COMMENT') {
+  const { data } = await getOctokit().pulls.createReview({ owner, repo, pull_number: +n, body, event });
+  return data;
+}
+
+// ─── FILES & REPO CONTENT ──────────────────────────────────
+async function getFile(owner, repo, filePath, ref) {
+  const params = { owner, repo, path: filePath };
+  if (ref) params.ref = ref;
+  const { data } = await getOctokit().repos.getContent(params);
+  if (data.encoding === 'base64') return { content: Buffer.from(data.content, 'base64').toString('utf8'), sha: data.sha };
+  return { content: data.content, sha: data.sha };
+}
+async function putFile(owner, repo, filePath, content, message, sha) {
+  const params = { owner, repo, path: filePath, message, content: Buffer.from(content).toString('base64') };
+  if (sha) params.sha = sha;
+  const { data } = await getOctokit().repos.createOrUpdateFileContents(params);
+  return data;
+}
+async function deleteFile(owner, repo, filePath, message, sha) {
+  return getOctokit().repos.deleteFile({ owner, repo, path: filePath, message, sha });
+}
+async function listContents(owner, repo, p = '', ref) {
+  const params = { owner, repo, path: p };
+  if (ref) params.ref = ref;
+  const { data } = await getOctokit().repos.getContent(params);
+  return Array.isArray(data) ? data : [data];
+}
+// Full recursive file tree via Git Trees API — needed to actually understand a codebase (listContents alone only sees one directory level)
+async function getFullTree(owner, repo, ref) {
+  const ok = getOctokit();
+  const branch = ref || (await ok.repos.get({ owner, repo })).data.default_branch;
+  const { data: refData } = await ok.git.getRef({ owner, repo, ref: `heads/${branch}` });
+  const { data } = await ok.git.getTree({ owner, repo, tree_sha: refData.object.sha, recursive: '1' });
+  return data.tree.filter(t => t.type === 'blob').map(t => ({ path: t.path, size: t.size }));
+}
+
+// ─── BRANCHES ──────────────────────────────────────────────
+async function listBranches(owner, repo) {
+  const { data } = await getOctokit().repos.listBranches({ owner, repo, per_page: 30 });
+  return data;
+}
+async function createBranch(owner, repo, branchName, fromBranch = 'main') {
+  const ok = getOctokit();
+  const { data: ref } = await ok.git.getRef({ owner, repo, ref: `heads/${fromBranch}` });
+  const { data } = await ok.git.createRef({ owner, repo, ref: `refs/heads/${branchName}`, sha: ref.object.sha });
+  return data;
+}
+async function deleteBranch(owner, repo, branchName) {
+  return getOctokit().git.deleteRef({ owner, repo, ref: `heads/${branchName}` });
+}
+
+// ─── REPO OPERATIONS ───────────────────────────────────────
+async function getUserRepos(username) {
+  const { data } = await getOctokit().repos.listForUser({ username, per_page: 100, sort: 'updated' });
+  return data;
+}
+async function getRepo(owner, repo) {
+  const { data } = await getOctokit().repos.get({ owner, repo });
+  return data;
+}
+async function createRepo(name, description = '', isPrivate = false) {
+  const { data } = await getOctokit().repos.createForAuthenticatedUser({ name, description, private: isPrivate, auto_init: true });
+  return data;
+}
+async function deleteRepo(owner, repo) {
+  return getOctokit().repos.delete({ owner, repo });
+}
+async function updateRepoSettings(owner, repo, settings) {
+  const { data } = await getOctokit().repos.update({ owner, repo, ...settings });
+  return data;
+}
+async function addCollaborator(owner, repo, username, permission = 'push') {
+  return getOctokit().repos.addCollaborator({ owner, repo, username, permission });
+}
+async function removeCollaborator(owner, repo, username) {
+  return getOctokit().repos.removeCollaborator({ owner, repo, username });
+}
+async function getAuthenticatedUser() {
+  const { data } = await getOctokit().users.getAuthenticated();
+  return data;
+}
+async function listMyRepos(opts = {}) {
+  const { data } = await getOctokit().repos.listForAuthenticatedUser({ per_page: 100, sort: 'updated', ...opts });
+  return data;
+}
+async function transferRepo(owner, repo, newOwner) {
+  return getOctokit().repos.transfer({ owner, repo, new_owner: newOwner });
+}
+async function archiveRepo(owner, repo, archived = true) {
+  const { data } = await getOctokit().repos.update({ owner, repo, archived });
+  return data;
+}
+async function setRepoTopics(owner, repo, topics) {
+  const { data } = await getOctokit().repos.replaceAllTopics({ owner, repo, names: topics });
+  return data;
+}
+async function forkRepo(owner, repo) {
+  const { data } = await getOctokit().repos.createFork({ owner, repo });
+  return data;
+}
+async function starRepo(owner, repo) {
+  return getOctokit().activity.starRepoForAuthenticatedUser({ owner, repo });
+}
+async function searchCode(q, owner, repo) {
+  const query = repo ? `${q} repo:${owner}/${repo}` : owner ? `${q} user:${owner}` : q;
+  const { data } = await getOctokit().search.code({ q: query, per_page: 20 });
+  return data.items;
+}
+async function searchRepos(q) {
+  const { data } = await getOctokit().search.repos({ q, sort: 'stars', per_page: 10 });
+  return data.items;
+}
+
+// ─── GIT CLONE & LOCAL OPS ────────────────────────────────
+async function cloneRepo(owner, repo, targetDir) {
+  const token = getKey();
+  const url = `https://${token}@github.com/${owner}/${repo}.git`;
+  await fs.mkdir(targetDir, { recursive: true });
+  const git = simpleGit();
+  await git.clone(url, targetDir);
+  return targetDir;
+}
+async function gitOps(repoDir, operation, args = {}) {
+  const git = simpleGit(repoDir);
+  await git.addConfig('user.email', 'agent@ai-dev.local');
+  await git.addConfig('user.name', 'AI Dev Agent');
+  switch (operation) {
+    case 'status': return git.status();
+    case 'add': return git.add(args.files || '.');
+    case 'commit': return git.commit(args.message || 'chore: automated update');
+    case 'push': return git.push(args.remote || 'origin', args.branch || 'main', args.force ? ['--force'] : []);
+    case 'pull': return git.pull(args.remote || 'origin', args.branch || 'main');
+    case 'fetch': return git.fetch(args.remote || 'origin');
+    case 'checkout': return git.checkout(args.branch);
+    case 'checkoutNew': return git.checkoutLocalBranch(args.branch);
+    case 'branch': return git.branch();
+    case 'deleteBranch': return git.deleteLocalBranch(args.branch, args.force);
+    case 'merge': return git.merge([args.branch]);
+    case 'rebase': return git.rebase([args.branch]);
+    case 'cherryPick': return git.raw(['cherry-pick', args.sha]);
+    case 'tag': return git.addTag(args.tag);
+    case 'tags': return git.tags();
+    case 'pushTags': return git.pushTags(args.remote || 'origin');
+    case 'reset': return git.reset(args.mode ? [args.mode] : ['--mixed']);
+    case 'revert': return git.raw(['revert', '--no-edit', args.sha]);
+    case 'log': return git.log({ maxCount: args.n || 10 });
+    case 'diff': return git.diff(args.files ? [args.files] : []);
+    case 'diffStaged': return git.diff(['--staged']);
+    case 'stash': return git.stash();
+    case 'stashPop': return git.stash(['pop']);
+    case 'remote': return git.getRemotes(true);
+    case 'addRemote': return git.addRemote(args.name || 'origin', args.url);
+    case 'blame': return git.raw(['blame', args.file]);
+    case 'show': return git.show([args.sha || 'HEAD']);
+    case 'clean': return git.clean('f', args.dirs ? ['-d'] : []);
+    case 'raw': return git.raw(args.command.split(' '));
+    default: throw new Error(`Unknown git op: ${operation}. Use 'raw' with {command:"..."} for anything else.`);
+  }
+}
+
+// ─── ACTIONS & CI ──────────────────────────────────────────
+async function listWorkflows(owner, repo) {
+  const { data } = await getOctokit().actions.listRepoWorkflows({ owner, repo });
+  return data.workflows;
+}
+async function listRuns(owner, repo) {
+  const { data } = await getOctokit().actions.listWorkflowRunsForRepo({ owner, repo, per_page: 10 });
+  return data.workflow_runs;
+}
+async function triggerWorkflow(owner, repo, workflowId, ref = 'main', inputs = {}) {
+  return getOctokit().actions.createWorkflowDispatch({ owner, repo, workflow_id: workflowId, ref, inputs });
+}
+
+// ─── RELEASES ──────────────────────────────────────────────
+async function listReleases(owner, repo) {
+  const { data } = await getOctokit().repos.listReleases({ owner, repo, per_page: 10 });
+  return data;
+}
+async function createRelease(owner, repo, tag, name, body, draft = false) {
+  const { data } = await getOctokit().repos.createRelease({ owner, repo, tag_name: tag, name, body, draft });
+  return data;
+}
+
+// ─── COMMITS ───────────────────────────────────────────────
+async function listCommits(owner, repo, n = 10) {
+  const { data } = await getOctokit().repos.listCommits({ owner, repo, per_page: n });
+  return data;
+}
+async function getCommit(owner, repo, sha) {
+  const { data } = await getOctokit().repos.getCommit({ owner, repo, ref: sha });
+  return data;
+}
+
+// ── BATCH - runs many GitHub ops safely without hitting rate limits ──
+async function batch(items, fn, { concurrency = 3, delayMs = 250 } = {}) {
+  const results = [];
+  for (let i = 0; i < items.length; i += concurrency) {
+    const slice = items.slice(i, i + concurrency);
+    const chunk = await Promise.allSettled(slice.map(fn));
+    results.push(...chunk);
+    if (i + concurrency < items.length) await new Promise(r => setTimeout(r, delayMs));
+  }
+  return results.map((r, i) => r.status === 'fulfilled' ? r.value : { error: r.reason?.message, item: items[i] });
+}
+
+module.exports = {
+  getIssue, listIssues, createIssue, updateIssue, closeIssue, commentIssue, addLabels, assignIssue,
+  listPRs, createPR, mergePR, getPRDiff, reviewPR,
+  getFile, putFile, deleteFile, listContents, getFullTree,
+  listBranches, createBranch, deleteBranch,
+  getUserRepos, getRepo, createRepo, forkRepo, starRepo, searchCode, searchRepos,
+  deleteRepo, updateRepoSettings, addCollaborator, removeCollaborator, getAuthenticatedUser, listMyRepos, transferRepo, archiveRepo, setRepoTopics,
+  cloneRepo, gitOps,
+  listWorkflows, listRuns, triggerWorkflow,
+  listReleases, createRelease,
+  listCommits, getCommit, batch
+};

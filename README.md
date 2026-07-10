@@ -1,40 +1,39 @@
-# ⚡ ARIA (Hermes Agent core)
+# ⚡ ARIA — Autonomous AI Dev Agent
 
-A self-improving autonomous AI agent — creates skills from experience, improves them during use, and manages GitHub like a human engineer. Built on the [Hermes Agent](https://github.com/NousResearch/hermes-agent) core by Nous Research (MIT licensed), configured here to run entirely on free OpenRouter models.
+Fully autonomous coding agent: solves GitHub issues, ships whole projects, researches the web, drives VS Code, and talks to Claude/ChatGPT/Gemini through your own logged-in browser session — 100% free-model powered via OpenRouter.
 
 ## What it does
-- **Learns.** Creates and refines its own skills from what it does; searches its own past sessions; builds a model of you across conversations.
-- **Full GitHub mastery.** Issues, PRs, branches, releases, code review, repo management — via the built-in `skills/github/` suite plus raw git/shell.
-- **Runs anywhere.** Local, Docker, SSH, or serverless (Modal/Daytona) backends.
-- **Lives where you do.** CLI, Telegram, Discord, Slack, WhatsApp, Signal — one gateway process.
-- **Any model, free by default.** Routes through OpenRouter; ships pointed at free models (`meta-llama/llama-3.3-70b-instruct:free` primary, `deepseek/deepseek-chat-v3-0324:free` fallback). Swap anytime with `hermes model`.
-- **Scheduled automation.** Built-in cron for unattended daily/weekly jobs.
-- **Parallel work.** Spawns subagents for isolated workstreams.
+- **Runs until done.** No iteration cap — works until the task is verifiably complete, or you hit Stop.
+- **Full GitHub control.** Issues, PRs, branches, releases, CI, repo settings, collaborators, delete/archive/transfer — treats your account as its workspace.
+- **Ships real projects.** One idea in → architecture, code, tests, README, LICENSE, CI, all pushed to a brand-new repo.
+- **Researches like a human.** Live web search, multi-page synthesis, NPM/PyPI lookups, doc reading.
+- **Deep VS Code integration.** Opens files, configures debugging/tasks/settings, installs extensions, scaffolds workspaces.
+- **Browser + OS control.** Puppeteer automation, opens apps/URLs, creates files/folders on your machine.
+- **Free models only.** 65+ free OpenRouter models, auto key rotation (up to 3 keys), auto fallback on rate limits/errors.
+- **Talks to other AIs.** Optional: log into claude.ai / chatgpt.com / gemini.google.com once, ARIA can consult them for a second opinion — no API key needed.
+- **Remembers.** Persistent condensed memory across sessions; caches repo reads and research to save tokens/time.
 
-## Setup
+## Quick start
 ```bash
 git clone https://github.com/yuvrajlaptop2008-byte/ai-dev-agent.git
 cd ai-dev-agent
+cp .env.example .env   # add GITHUB_TOKEN + OPENROUTER_API_KEY
 bash run.sh
 ```
-First run creates `.env` and stops — add your keys, then run `bash run.sh` again:
-```
-OPENROUTER_API_KEY=...   # https://openrouter.ai/keys
-GITHUB_TOKEN=...         # https://github.com/settings/tokens/new (repo, workflow scopes)
-```
-That's it — `run.sh` handles the venv, install, and first-run config seeding every time.
+Open `http://localhost:3001`. Full guide: [SETUP.md](SETUP.md).
 
-## Daily use
-```bash
-hermes                # interactive chat
-hermes setup          # reconfigure anything
-hermes model          # switch model/provider
-hermes gateway setup  # wire up Telegram/Discord/Slack/etc
-hermes cron           # schedule recurring jobs
-hermes doctor         # health check
-```
-
-Requires Python 3.11–3.13 and Node.js (for the TUI/web assets).
+## Interface
+| Tab | Purpose |
+|---|---|
+| Agent | Give it any task, pick Deep/Fast mode, watch it work, Stop anytime |
+| Chat | Direct streaming chat, any free model |
+| Research | Deep think / plan / decide / web research on demand |
+| GitHub | Browse issues, PRs, branches, commits |
+| Contribute | One-click: solve issue, improve README, write tests, add CI, build new project |
+| VS Code | Open files, scaffold projects, manage extensions/configs |
+| Terminal | Full shell access |
+| MCP | Connect external tool servers |
+| Settings | Keys, model rotation, Web-LLM logins, memory viewer |
 
 ## License
-MIT — original Hermes Agent core © Nous Research. See [LICENSE](LICENSE).
+MIT
