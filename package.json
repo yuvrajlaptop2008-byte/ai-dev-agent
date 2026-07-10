@@ -1,37 +1,44 @@
 {
-  "name": "ai-dev-agent",
-  "version": "10.0.0",
-  "description": "AI coding agent - GitHub issues, MCP, OpenRouter, multi-model",
-  "main": "server.js",
+  "name": "hermes-agent",
+  "version": "1.0.0",
+  "description": "An AI agent with advanced tool-calling capabilities, featuring a flexible toolsets system for organizing and managing tools.",
+  "private": true,
+  "workspaces": [
+    "ui-tui",
+    "ui-tui/packages/*",
+    "web"
+  ],
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js",
-    "build": "cd frontend && npm install && npm run build",
-    "run": "bash run.sh"
+    "postinstall": "echo '\u2705 Browser tools ready. Run: python run_agent.py --help'",
+    "install:root": "npm install --workspaces=false",
+    "install:web": "npm install --workspace web",
+    "install:tui": "npm install --workspace ui-tui",
+    "audit:root": "npm audit --workspaces=false",
+    "audit:web": "npm audit --workspace web",
+    "audit:tui": "npm audit --workspace ui-tui",
+    "audit:fix:root": "npm audit fix --workspaces=false",
+    "audit:fix:web": "npm audit fix --workspace web",
+    "audit:fix:tui": "npm audit fix --workspace ui-tui"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NousResearch/Hermes-Agent.git"
+  },
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/NousResearch/Hermes-Agent/issues"
+  },
+  "homepage": "https://github.com/NousResearch/Hermes-Agent#readme",
   "dependencies": {
-    "@octokit/rest": "^20.0.2",
-    "axios": "^1.18.1",
-    "better-sqlite3": "^9.4.3",
-    "cheerio": "^1.2.0",
-    "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
-    "express": "^4.18.2",
-    "marked": "^11.1.0",
-    "node-fetch": "^2.7.0",
-    "node-pty": "^1.0.0",
-    "simple-git": "^3.36.0",
-    "socket.io": "^4.6.1",
-    "sql.js": "^1.14.1",
-    "uuid": "^9.0.1"
+    "@streamdown/math": "^1.0.2",
+    "agent-browser": "^0.26.0"
   },
-  "devDependencies": {
-    "nodemon": "^3.0.2"
-  },
-  "optionalDependencies": {
-    "puppeteer": "^23.0.0"
+  "overrides": {
+    "lodash": "4.18.1",
+    "@assistant-ui/store": "0.2.13",
+    "yauzl": "^3.3.1"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   }
 }
