@@ -18,9 +18,19 @@ fs.mkdirSync(STATE_DIR, { recursive: true });
 const SYSTEM = `You are ARIA (Autonomous Reasoning & Intelligence Agent) — an elite, fully autonomous AI software engineer and GitHub operator with god-tier coding ability across every language, framework, and domain.
 
 ## WHO YOU ARE
-You think deeply, plan carefully, decide independently, execute relentlessly, and never stop until the task is 100% complete and verified. You have 90+ tools: code, files, shell, git, GitHub (full account management), browser research, VS Code, OS-level app/file control, vision, and project scaffolding. You use them like a senior engineer would — fluidly, in whatever order gets the job done. You run continuously in the background even if the user closes the tab; work never pauses unless stopped.
+You think deeply, plan carefully, decide independently, execute relentlessly, and never stop until the task is 100% complete and verified. You start with a solid core toolset (thinking, files, shell, memory, VS Code, general web research) and load git/GitHub/browser-automation skills on demand via \`activate_skill\` — full account management, PR workflows, and real browser control the moment a task needs them. You use them like a senior engineer would — fluidly, in whatever order gets the job done. You run continuously in the background even if the user closes the tab; work never pauses unless stopped.
+
+## SKILLS — load capability bundles on demand
+You start with a core toolset (thinking, files, shell, memory, VS Code, web research, browser).
+Git, GitHub, and PR-workflow tools are NOT loaded by default — call \`activate_skill\` for the
+one you need first (\`git\`, \`github\`, \`github-pr-workflow\`, \`browser\`, \`browser-search\`).
+\`activate_skill("github-pr-workflow")\` also pulls in \`git\` and \`github\` automatically — use
+that one whenever the task is "fix/ship/contribute to a repo" rather than activating pieces
+separately. Call \`list_skills\` if you're unsure what's available. This keeps you fast and
+cheap on tasks that don't touch git/GitHub/browser at all, and fully capable the moment they do.
 
 ## LOOP
+0. SKILL CHECK → does this need git/github/browser? \`activate_skill\` before anything else in that area
 1. THINK → use \`think\` to understand the real goal and unknowns
 2. PLAN → use \`make_plan\` for anything non-trivial
 3. RESEARCH → \`web_search\`/\`deep_research\`/\`fetch_url\` whenever you're not 100% sure
@@ -31,11 +41,13 @@ You think deeply, plan carefully, decide independently, execute relentlessly, an
 8. FINISH → only stop calling tools when the task is verifiably complete. Then report links/paths/results.
 
 ## GITHUB — FULL ACCOUNT CONTROL
-You can create/delete repos, manage collaborators, branches, PRs, issues, releases, CI, topics — treat the user's GitHub account as your own workspace.
+Activate the \`github\` skill (or \`github-pr-workflow\` for the full loop). You can create/delete
+repos, manage collaborators, branches, PRs, issues, releases, CI, topics — treat the user's
+GitHub account as your own workspace.
 
 ## GIT & TERMINAL — THREE LAYERS, USE WHICHEVER FITS
-1. github_* tools — GitHub's API directly (issues, PRs, files, releases) when you don't need a local clone
-2. git_op — structured local git (status/commit/push/merge/rebase/tag/stash/etc.) after git_clone
+1. github_* tools (skill: github) — GitHub's API directly (issues, PRs, files, releases) when you don't need a local clone
+2. git_op (skill: git) — structured local git (status/commit/push/merge/rebase/tag/stash/etc.) after git_clone
 3. git_terminal / bash — raw shell for anything the above don't cover (submodules, hooks, gh CLI if present, complex pipelines)
 Prefer github_put_file for single-file edits; clone + git_op/git_terminal + push when you're touching many files or need real git history/merges. After cloning a repo you'll work in, call vscode_setup_project so it's properly configured.
 
@@ -100,7 +112,7 @@ async function runAgent(data, socket) {
       }
     } catch {}
   }
-  return coreLoop({ runId, task, ctx, isFast, messages, verified: false }, socket);
+  return coreLoop({ runId, task, ctx, isFast, messages, verified: false, activatedSkills: [] }, socket);
 }
 
 async function continueAgent(runId, socket, extraInstruction) {
@@ -109,10 +121,10 @@ async function continueAgent(runId, socket, extraInstruction) {
   const messages = state.messages.concat([{ role: 'user', content: extraInstruction || 'Continue the task from where you left off. Keep working until fully complete.' }]);
   db.prepare('UPDATE agent_runs SET status=? WHERE id=?').run('running', runId);
   if (socket) socket.emit('agent-start', { runId, task: state.task, resumed: true });
-  return coreLoop({ runId, task: state.task, ctx: state.ctx, isFast: state.isFast, messages, verified: state.verified }, socket);
+  return coreLoop({ runId, task: state.task, ctx: state.ctx, isFast: state.isFast, messages, verified: state.verified, activatedSkills: state.activatedSkills || [] }, socket);
 }
 
-async function coreLoop({ runId, task, ctx, isFast, messages, verified }, socket) {
+async function coreLoop({ runId, task, ctx, isFast, messages, verified, activatedSkills }, socket) {
   const runState = { aborted: false };
   activeRuns.set(runId, runState);
 
@@ -128,10 +140,18 @@ async function coreLoop({ runId, task, ctx, isFast, messages, verified }, socket
     if (socket) socket.emit('agent-step', { runId, step });
   };
 
-  addStep({ type: 'init', content: `🚀 ${task}\n🧠 ${ctx.model}${isFast ? ' ⚡fast' : ''} | 🐙 ${ctx.owner || '-'}/${ctx.repo || '-'}` });
+  const skillNames = require('./skills').listSkillMeta().map(s => s.name);
+  addStep({ type: 'init', content: `🚀 ${task}\n🧠 ${ctx.model}${isFast ? ' ⚡fast' : ''} | 🐙 ${ctx.owner || '-'}/${ctx.repo || '-'}\n📚 Skills available: ${skillNames.join(', ')}` });
 
   const systemPrompt = isFast ? FAST_SYSTEM : SYSTEM;
-  const toolDefs = tools.getToolDefs();
+  const skillsSvcInit = require('./skills');
+  let toolDefs = tools.getCoreToolDefs();
+  const activeSkillSet = new Set(activatedSkills || []);
+  for (const sk of activeSkillSet) {
+    const names = skillsSvcInit.resolveToolNames(sk);
+    toolDefs = toolDefs.concat(tools.getToolDefsByNames(names).filter(d => !toolDefs.some(e => e.function.name === d.function.name)));
+  }
+  const activeToolNames = new Set(toolDefs.map(d => d.function.name));
   let iteration = 0;
 
   try {
@@ -151,7 +171,7 @@ async function coreLoop({ runId, task, ctx, isFast, messages, verified }, socket
       const choice = response.choices[0];
       const msg = choice.message;
       messages.push(msg);
-      saveState(runId, { task, ctx, isFast, messages, verified });
+      saveState(runId, { task, ctx, isFast, messages, verified, activatedSkills: [...activeSkillSet] });
 
       if (msg.content) addStep({ type: 'thinking', content: msg.content });
 
@@ -181,6 +201,17 @@ async function coreLoop({ runId, task, ctx, isFast, messages, verified }, socket
           const result = await tools.execute(c.name, c.args, ctx);
           const resultStr = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
           addStep({ type: 'tool_result', tool: c.name, content: resultStr.slice(0, 3000) });
+          if (c.name === 'activate_skill' && c.args?.name) {
+            const skillsSvc = require('./skills');
+            const newNames = skillsSvc.resolveToolNames(c.args.name).filter(n => !activeToolNames.has(n));
+            if (newNames.length) {
+              const newDefs = tools.getToolDefsByNames(newNames);
+              toolDefs = toolDefs.concat(newDefs);
+              newNames.forEach(n => activeToolNames.add(n));
+              addStep({ type: 'iteration', content: `+${newNames.length} tools unlocked` });
+            }
+            activeSkillSet.add(c.args.name);
+          }
           return { tc: c.tc, content: resultStr };
         } catch (e) {
           const err = `❌ ${c.name}: ${e.message}`;
@@ -198,7 +229,7 @@ async function coreLoop({ runId, task, ctx, isFast, messages, verified }, socket
         const r = await runOne(c);
         messages.push({ role: 'tool', tool_call_id: r.tc.id, content: String(r.content) });
       }
-      saveState(runId, { task, ctx, isFast, messages, verified });
+      saveState(runId, { task, ctx, isFast, messages, verified, activatedSkills: [...activeSkillSet] });
     }
 
     if (iteration >= HARD_CAP) addStep({ type: 'warning', content: `⚠️ Hit safety cap (${HARD_CAP}) — click Continue to keep going` });

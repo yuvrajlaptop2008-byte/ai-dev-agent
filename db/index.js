@@ -44,7 +44,8 @@ function saveStore(store) {
 }
 
 function initJsonStore(store) {
-  if (!store.settings.system_prompt) store.settings.system_prompt = 'You are an expert AI coding agent.';
+  const STALE_DEFAULTS = ['You are an expert AI coding agent.', 'You are an expert AI coding agent. You can solve GitHub issues, write code, research solutions, plan projects, and execute tasks autonomously. Always think step by step and be thorough.'];
+  if (!store.settings.system_prompt || STALE_DEFAULTS.includes(store.settings.system_prompt)) store.settings.system_prompt = require('../services/persona').ARIA_PERSONA;
   if (!store.settings.default_model) store.settings.default_model = 'meta-llama/llama-3.3-70b-instruct:free';
   saveStore(store);
 }
@@ -90,9 +91,9 @@ function initSchema(d) {
     CREATE TABLE IF NOT EXISTS agent_runs (id TEXT PRIMARY KEY, task TEXT, status TEXT DEFAULT 'running', steps TEXT DEFAULT '[]', result TEXT, created_at INTEGER DEFAULT (unixepoch()));
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
     CREATE TABLE IF NOT EXISTS mcp_servers (id TEXT PRIMARY KEY, name TEXT, url TEXT, type TEXT, enabled INTEGER DEFAULT 1, config TEXT DEFAULT '{}');
-    INSERT OR IGNORE INTO settings VALUES ('default_model', 'meta-llama/llama-3.3-70b-instruct:free');
-    INSERT OR IGNORE INTO settings VALUES ('system_prompt', 'You are an expert AI coding agent.');
+    INSERT OR IGNORE INTO settings (key, value) VALUES ('default_model', 'meta-llama/llama-3.3-70b-instruct:free');
   `);
+  d.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').run('system_prompt', require('../services/persona').ARIA_PERSONA);
 }
 
 module.exports = { db, get, set };

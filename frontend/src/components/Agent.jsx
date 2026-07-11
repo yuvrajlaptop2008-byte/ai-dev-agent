@@ -143,7 +143,7 @@ export default function Agent() {
               <h2>ARIA — Your AI Software Engineer</h2>
               <p>Type what you want in plain English. ARIA plans, researches, writes code, and manages your GitHub like a human engineer — no coding knowledge needed.</p>
               <div className="cap-grid">
-                {['✅ Solve GitHub Issues', '✅ Create & merge PRs', '✅ Clone & edit repos', '✅ Search the web', '✅ Write & run code', '✅ Manage branches', '✅ Run CI/CD', '✅ Browse URLs', '✅ VSCode integration', '✅ Autonomous loop'].map(c => <span key={c} className="cap">{c}</span>)}
+                {['✅ Solve GitHub Issues', '✅ Create & merge PRs', '✅ Clone & edit repos', '✅ Search the web', '✅ Write & run code', '✅ Manage branches', '✅ Run CI/CD', '✅ See & control the screen', '✅ VSCode integration', '✅ Runs until done'].map(c => <span key={c} className="cap">{c}</span>)}
               </div>
             </div>
           )}

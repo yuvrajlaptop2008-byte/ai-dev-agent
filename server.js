@@ -43,8 +43,9 @@ io.on('connection', (socket) => {
   // Streaming chat
   socket.on('stream-chat', async (data) => {
     const { streamChat } = require('./services/openrouter');
-    const { db } = require('./db');
+    const { db, get } = require('./db');
     const { v4: uuidv4 } = require('uuid');
+    if (!data.systemPrompt) data.systemPrompt = get('system_prompt');
     let fullText = '';
     const convId = data.convId;
     try {
@@ -120,6 +121,6 @@ const PORT = process.env.PORT || 3001;
 httpServer.listen(PORT, () => {
   console.log(`\n⚡ ARIA - AI Dev Agent`);
   console.log(`🌐 http://localhost:${PORT}`);
-  console.log(`🤖 80+ tools | Multi-model | VSCode | GitHub | Browser Research\n`);
+  console.log(`🤖 100+ tools across 6 skills | Multi-model | Desktop control | GitHub | Browser\n`);
 });
 // Added by patch

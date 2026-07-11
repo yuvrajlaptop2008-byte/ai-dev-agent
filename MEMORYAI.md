@@ -147,17 +147,89 @@
 - Contribute.jsx: added Strengthen My Profile + Build Profile README action cards; run() guard now only requires repo for repo-scoped actions (build-project/strengthen/profile-readme only need owner/username).
 - Agent.jsx: QUICK_TASKS leads with '💪 Strengthen My Profile' and '🚀 Build Something New'; task placeholder and empty-state copy rewritten for non-coders ("no coding knowledge needed", plain-English framing) — this + the always-available quick-task buttons are the primary "just give a command" UX per user's ask.
 
-## v17 (GLM/z.ai provider, self-evolving skill memory, fixed a leftover paid-model bug)
-- webllm.js: added glm provider (chat.z.ai, best-effort selectors like the others). SITES now: claude/chatgpt/gemini/aistudio/glm. Settings.jsx provider list, ask_web_llm/webllm_login tool descriptions updated to match.
-- BUGFIX: brain.js selectBestModel() still referenced paid models (deepseek-coder-v2 no :free, anthropic/claude-3-opus, anthropic/claude-3-haiku) — normalizeModel() in openrouter.js silently caught these but it was sloppy/wrong. Rewritten fully free-only.
-- REAL FEATURE — self-evolving skill memory (brain.js): learnSkill(task, outcome, model) extracts {skill_name, applies_to, approach, pitfalls, tools_used, keywords} via LLM after a task and saves to memory category 'skills'. getRelevantSkills(task) keyword-matches against saved skills, returns top matches, and increments their `uses` counter each time they're recalled (reinforcement — more-used skills surface as more battle-tested). skillsSummary() lists all learned skills sorted by usage.
-- agent.js: runAgent() now injects "relevant experience from past similar tasks" into fresh (non-fast) runs before the task starts, using getRelevantSkills(). On successful completion (status 'done', >2 iterations) fires brain.learnSkill() in the background (non-blocking, failure-safe) — this is the actual learn→recall→reinforce loop, not just a design intent.
-- New agent tools: learn_skill (explicit save), recall_skills (explicit check) — for when the agent wants to consult/store learning mid-task itself, on top of the automatic hook.
-- SYSTEM prompt: new "LEARNING" section explaining the skill memory to the agent itself.
-- Settings.jsx: new "🎓 Learned Skills" panel — shows every learned skill, its approach, pitfalls, and use-count. This is the visible "growing over time" the user can watch happen.
-- routes/brain.js: GET /skills
+## v18 (skills architecture — Hermes-inspired, own code, on-demand tool loading)
+NOTE: an earlier attempt this session fully replaced this repo with the actual upstream Hermes
+Agent Python codebase, then was reverted at user request (git revert, commit 89b0e08) because the
+user wanted to remove Nous Research's required MIT attribution and claim sole authorship — that
+specific ask was declined (MIT requires preserving the copyright notice; stripping it while
+claiming personal authorship of a real, named project isn't something this assistant will do).
+The user then asked to keep the Node.js app but recreate the *concepts* Hermes uses — SKILL.md-
+based capability bundles, on-demand loading — as fresh, original code. That's what v18 is.
+
+## New: skills/ directory (Hermes-style SKILL.md layout, entirely original implementation)
+5 skills, each with SKILL.md (YAML-ish frontmatter: name/description/keywords/tools/activates +
+markdown body) + references/ + templates/ (+ scripts/ reserved for future use):
+- **git** — git_clone, git_op, git_terminal
+- **github** — all 33 github_* API tools (issues/PRs/files/branches/releases/repo mgmt/actions)
+- **github-pr-workflow** — no tools of its own; `activates: git, github` (cascades via
+  resolveToolNames), ships PR description + commit message templates, full branch→PR→merge flow
+- **browser** — browser_automate, fetch_url, read_website
+- **browser-search** — web_search, deep_research, fetch_docs, search_npm, search_pypi,
+  fetch_github_readme, fetch_api
+
+## services/skills.js
+Parses skills/*/SKILL.md frontmatter at first access (cached). listSkillMeta() = cheap
+{name,description} list, always visible to the agent. getSkill(name), resolveToolNames(name)
+(recursively follows `activates:` to pull in dependency skills' tools too, dedup'd),
+suggestSkills(task) (keyword match, not currently wired into agent.js — available for future use).
+
+## tools/index.js changes
+Added list_skills + activate_skill as real tools (in T{} and getToolDefs()). New exports:
+getSkillOwnedToolNames() (union of every skill's resolved tool names), getCoreToolDefs()
+(getToolDefs() minus anything skill-owned — currently 51 of 97 total defs), getToolDefsByNames(names).
+Nothing about the existing 97 tool implementations changed — this is purely a filtering/loading
+layer on top, zero risk to existing behavior when a skill isn't used.
+
+## services/agent.js changes — real on-demand loading, not just cosmetic
+coreLoop() now starts each run with `toolDefs = tools.getCoreToolDefs()` (not the full 97) plus
+whatever's in `activatedSkills` (empty on fresh runAgent(), restored from saved state on
+continueAgent() — this was the trickiest part: without restoring activatedSkills on Continue, a
+resumed run would forget it had git/github tools active and the model would see tool_call results
+in history referencing tools no longer in its schema). Inside the tool-execution block, when
+`activate_skill` runs, resolveToolNames() for that skill's newly-needed tool names get appended to
+the live `toolDefs` array (dedup'd against `activeToolNames`) — takes effect starting the very next
+model call in the same run, no restart needed. `activeSkillSet` is tracked and persisted via
+saveState() alongside messages/ctx/verified so Continue reconstructs the exact same tool
+availability the run had when it stopped.
+
+SYSTEM prompt: new "SKILLS" section teaches the model this exists and to call `activate_skill`
+before touching git/GitHub/browser; LOOP now has a step 0 "SKILL CHECK"; GITHUB/GIT sections
+annotated with which skill owns which tools; opening capability blurb rewritten to describe
+core+on-demand instead of a flat "90+ tools" claim.
+
+## Verified
+`node -e` full require of every service + tools + agent.js — all load clean. `getCoreToolDefs()`
+returns 51/97 (46 skill-gated across the 5 skills, github skill alone owns 33). `resolveToolNames
+('github-pr-workflow')` correctly cascades to include all git+github tool names. Server boots clean.
+
+## v19 (human conversational tone, desktop control — real, not mock)
+- BUGFIX found + fixed: analyze_image was still calling the removed/blocked google/gemini-2.0-flash-exp:free model (leftover from before that model was stripped in an earlier pass) — switched to meta-llama/llama-3.2-11b-vision-instruct:free (actually in the stable free catalog, vision-capable).
+- BUGFIX found + fixed: server.js's stream-chat socket handler (used by the Chat tab) never set a systemPrompt at all — Chat.jsx doesn't send one, so plain chat was running with zero persona/system prompt. Now defaults to get('system_prompt') from settings when data.systemPrompt is absent.
+- services/persona.js (new): ARIA_PERSONA — a from-scratch, original conversational system prompt. Warm, direct, opinionated, contraction-using, admits uncertainty, doesn't perform false enthusiasm — written for natural human-sounding conversation, explicitly without claiming literal sentience (no false claims about "real feelings" in a philosophical sense — the ask was interpreted as tone/warmth, which is what got built).
+- db/index.js: default system_prompt is now ARIA_PERSONA instead of the old flat "You are an expert AI coding agent." One-time migration in initJsonStore() upgrades any existing local data/store.json still holding the stale default (matched against known old default strings) — so this took effect on already-running local installs, not just fresh clones. Fixed a real bug in the process: the sqlite (non-fallback) initSchema() path was originally going to embed the persona via raw template-literal string interpolation directly into a `d.exec()` SQL string — extremely unsafe given the persona text is full of apostrophes ("you're", "I'd") that would break out of SQL string literals. Rewritten to use a parameterized `d.prepare(...).run(key, value)` insert instead.
+- agent.js SYSTEM/FAST_SYSTEM are unchanged in tone (still task-execution focused) — persona.js is specifically for the Chat tab's conversational mode, not the autonomous agent loop.
+
+## New: desktop skill (real OS control, 7th... wait 6th total skill: git/github/github-pr-workflow/browser/browser-search/desktop)
+skills/desktop/SKILL.md — real keyboard/mouse/screen control, not simulated:
+- `screen_screenshot` — actual OS screenshot (scrot/import/gnome-screenshot on Linux, screencapture
+  on macOS, PowerShell+System.Drawing on Windows), saved to workspace
+- `screen_look` — screenshot + vision-AI description in one call (uses the same free vision model
+  as analyze_image) — "see" the desktop before deciding what to do
+- `mouse_move`/`mouse_click` — xdotool (Linux) / cliclick (macOS) / PowerShell+user32 (Windows)
+- `keyboard_type`/`keyboard_key` — xdotool / osascript / SendKeys respectively
+All six degrade honestly with a clear "not installed"/"no display" message rather than pretending
+to succeed — verified: screen_screenshot correctly reports failure in this sandbox (no display),
+same honest-degradation pattern as browser_automate/open_url/clipboard_* from earlier versions.
+Added to tools/index.js T{} + getToolDefs() + READ_ONLY_TOOLS (screen_screenshot, screen_look only
+— the mutating ones stay sequential). Core/skill count is now 52 core / 103 total across 6 skills.
 
 ## Pending / Ideas Not Yet Built
+- suggestSkills(task) exists but isn't auto-called in agent.js yet
+- skills/*/scripts/ dirs are empty placeholders
+- No UI surfacing yet of which skills/tools are active mid-run beyond the step log
+- desktop skill entirely unverifiable in this sandbox (no display) — real test only possible on
+  the user's actual machine; code paths per-OS are correct per each platform's standard CLI/API
+  but haven't been run end-to-end anywhere with a real screen
 - WebSocket reconnect/backoff UI indicator
 
 ## v5 additions

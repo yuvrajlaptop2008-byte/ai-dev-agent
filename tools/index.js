@@ -35,7 +35,7 @@ const READ_ONLY_TOOLS = new Set([
   'search_npm','search_pypi','fetch_github_readme','fetch_docs','fetch_api','analyze_image',
   'github_get_issue','github_list_issues','github_get_file','github_list_files','github_list_branches',
   'github_list_prs','github_get_repo','github_search_code','github_search_repos','github_list_commits',
-  'github_list_workflows','github_workflow_runs','recall','search_memory','analyze_code','vscode_list_extensions','github_whoami','github_list_my_repos','mcp_list_servers','recall_skills'
+  'github_list_workflows','github_workflow_runs','recall','search_memory','analyze_code','vscode_list_extensions','github_whoami','github_list_my_repos','mcp_list_servers','recall_skills','screen_screenshot','screen_look'
 ]);
 
 const T = {
@@ -338,9 +338,68 @@ const T = {
 
   analyze_image: async ({ image_url, question }, ctx) => {
     const { chat } = require('../services/openrouter');
-    const model = 'google/gemini-2.0-flash-exp:free';
+    const model = 'meta-llama/llama-3.2-11b-vision-instruct:free';
     const r = await chat([{ role: 'user', content: [{ type: 'text', text: question || 'Describe this image in detail.' }, { type: 'image_url', image_url: { url: image_url } }] }], model);
     return r.choices[0].message.content;
+  },
+
+  // ── DESKTOP CONTROL — real keyboard, mouse, screen vision ─
+  screen_screenshot: async ({ save_as }) => {
+    const outPath = abs(save_as || `screenshot_${Date.now()}.png`);
+    await fs.mkdir(path.dirname(outPath), { recursive: true });
+    let cmd;
+    if (process.platform === 'darwin') cmd = `screencapture -x "${outPath}"`;
+    else if (process.platform === 'win32') cmd = `powershell -command "Add-Type -AssemblyName System.Windows.Forms,System.Drawing; $b=[System.Windows.Forms.SystemInformation]::VirtualScreen; $bmp=New-Object System.Drawing.Bitmap $b.Width,$b.Height; $g=[System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Location,[System.Drawing.Point]::Empty,$b.Size); $bmp.Save('${outPath}')"`;
+    else cmd = `scrot "${outPath}" 2>/dev/null || import -window root "${outPath}" 2>/dev/null || gnome-screenshot -f "${outPath}" 2>/dev/null`;
+    const out = await sh(cmd, WORKSPACE, 15000);
+    try { await fs.access(outPath); return `✅ Screenshot saved: ${outPath}`; }
+    catch { return `❌ No screenshot tool available / no display attached in this environment (tried ${process.platform === 'linux' ? 'scrot/import/gnome-screenshot' : cmd}). ${out}`; }
+  },
+
+  screen_look: async ({ question, save_as }) => {
+    const outPath = abs(save_as || `screenlook_${Date.now()}.png`);
+    const shot = await T.screen_screenshot({ save_as: path.relative(WORKSPACE, outPath) });
+    if (shot.startsWith('❌')) return shot;
+    const buf = await fs.readFile(outPath);
+    const b64 = buf.toString('base64');
+    const { chat } = require('../services/openrouter');
+    const r = await chat([{ role: 'user', content: [{ type: 'text', text: question || 'What is currently on screen? Describe it in detail, including any text, buttons, or UI elements visible.' }, { type: 'image_url', image_url: { url: `data:image/png;base64,${b64}` } }] }], 'meta-llama/llama-3.2-11b-vision-instruct:free');
+    return r.choices[0].message.content;
+  },
+
+  mouse_move: async ({ x, y }) => {
+    let cmd;
+    if (process.platform === 'darwin') cmd = `cliclick m:${x},${y} 2>&1 || echo "cliclick not installed (brew install cliclick)"`;
+    else if (process.platform === 'win32') cmd = `powershell -command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${x},${y})"`;
+    else cmd = `xdotool mousemove ${x} ${y} 2>&1 || echo "xdotool not installed (apt install xdotool)"`;
+    return sh(cmd);
+  },
+
+  mouse_click: async ({ x, y, button }) => {
+    const btn = button || 'left';
+    let cmd;
+    if (x !== undefined && y !== undefined) await T.mouse_move({ x, y });
+    if (process.platform === 'darwin') cmd = `cliclick c:. 2>&1 || echo "cliclick not installed"`;
+    else if (process.platform === 'win32') cmd = `powershell -command "Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public class M{[DllImport(\\"user32.dll\\")] public static extern void mouse_event(int f,int x,int y,int d,int e);}'; [M]::mouse_event(${btn === 'right' ? '0x0008,0,0,0,0); [M]::mouse_event(0x0010' : '0x0002,0,0,0,0); [M]::mouse_event(0x0004'},0,0,0,0)"`;
+    else cmd = `xdotool click ${btn === 'right' ? 3 : 1} 2>&1 || echo "xdotool not installed"`;
+    return sh(cmd);
+  },
+
+  keyboard_type: async ({ text }) => {
+    let cmd;
+    if (process.platform === 'darwin') cmd = `osascript -e 'tell application "System Events" to keystroke "${text.replace(/"/g, '\\"')}"' 2>&1`;
+    else if (process.platform === 'win32') cmd = `powershell -command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('${text.replace(/'/g, "''")}')"`;
+    else cmd = `xdotool type "${text.replace(/"/g, '\\"')}" 2>&1 || echo "xdotool not installed"`;
+    return sh(cmd);
+  },
+
+  keyboard_key: async ({ key }) => {
+    // key examples: "Return", "Escape", "ctrl+c", "alt+Tab"
+    let cmd;
+    if (process.platform === 'darwin') cmd = `osascript -e 'tell application "System Events" to key code (${key})' 2>&1 || echo "use keyboard_type for text, this platform needs key codes"`;
+    else if (process.platform === 'win32') cmd = `powershell -command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('{${key}}')"`;
+    else cmd = `xdotool key ${key} 2>&1 || echo "xdotool not installed"`;
+    return sh(cmd);
   },
 
   web_search: async ({ query, num_results }) => {
@@ -656,6 +715,19 @@ const T = {
     const cwd = abs(dir || WORKSPACE);
     return sh(`pip install ${packages.join(' ')} --break-system-packages -q 2>&1`, cwd, 120000);
   },
+
+  list_skills: async () => {
+    const skills = require('../services/skills').listSkillMeta();
+    return skills.map(s => `• ${s.name} — ${s.description}`).join('\n') || 'No skills found';
+  },
+
+  activate_skill: async ({ name }) => {
+    const skillsSvc = require('../services/skills');
+    const skill = skillsSvc.getSkill(name);
+    if (!skill) return `❌ Unknown skill "${name}". Available: ${skillsSvc.listSkillMeta().map(s => s.name).join(', ')}`;
+    const toolNames = skillsSvc.resolveToolNames(name);
+    return `✅ Activated "${name}" — ${toolNames.length} tools now available: ${toolNames.join(', ')}\n\n${skill.body}`;
+  },
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -682,7 +754,7 @@ function getToolDefs() {
     fn('recall', '🔍 Retrieve stored memory', P({ key: S('Key to retrieve (* for all)'), category: S('Category (* for all)') })),
     fn('search_memory', '🔎 Search through all memories', P({ query: S('Search query') }, ['query'])),
     fn('learn_skill', '🎓 Explicitly save a learned approach as a reusable skill for future similar tasks', P({ task_type: S('What kind of task this applies to'), outcome: S('What worked, in detail') }, ['task_type','outcome'])),
-    fn('recall_skills', '🎓 Check what skills you\'ve learned that are relevant to a task before starting', P({ task: S('The task to check skills for') }, ['task'])),
+    fn('recall_skills','screen_screenshot','screen_look', '🎓 Check what skills you\'ve learned that are relevant to a task before starting', P({ task: S('The task to check skills for') }, ['task'])),
 
     // SHELL
     fn('bash', '⚡ Execute shell/bash commands. Use for everything: install packages, run scripts, git, build, test, any CLI.', P({ command: S('Command to run'), cwd: S('Working directory (relative to workspace or absolute path)'), timeout_ms: N('Timeout in ms (default 45000)') }, ['command'])),
@@ -700,7 +772,7 @@ function getToolDefs() {
 
     // WEB
     fn('github_whoami', '🐙 Get authenticated GitHub account info', P({})),
-    fn('github_list_my_repos','mcp_list_servers','recall_skills', '🐙 List all repos in your own GitHub account', P({ type: S('all/owner/member') })),
+    fn('github_list_my_repos','mcp_list_servers','recall_skills','screen_screenshot','screen_look', '🐙 List all repos in your own GitHub account', P({ type: S('all/owner/member') })),
     fn('github_delete_repo', '🐙 Permanently delete a repository', P({ owner: S('Owner'), repo: S('Repo') }, ['owner','repo'])),
     fn('github_update_repo', '🐙 Update repo settings (description, homepage, visibility, features)', P({ owner: S('Owner'), repo: S('Repo'), description: S('New description'), homepage: S('Homepage URL'), private: B('Private'), has_issues: B('Enable issues'), has_wiki: B('Enable wiki') })),
     fn('github_add_collaborator', '🐙 Add a collaborator to a repo', P({ owner: S('Owner'), repo: S('Repo'), username: S('GitHub username'), permission: S('pull/push/admin') }, ['username'])),
@@ -712,7 +784,7 @@ function getToolDefs() {
     fn('clipboard_copy', '📋 Copy text to the system clipboard', P({ text: S('Text to copy') }, ['text'])),
     fn('clipboard_paste', '📋 Read current clipboard contents', P({})),
     fn('browser_automate', '🌐 Automate a real browser: navigate, click, type, screenshot (requires puppeteer + display; falls back gracefully)', P({ url: S('URL to visit'), actions: A('Array of action objects: {type:click/type/wait/screenshot, selector, text, ms}') }, ['url'])),
-    fn('mcp_list_servers','recall_skills', '🔌 List configured MCP servers and their status', P({})),
+    fn('mcp_list_servers','recall_skills','screen_screenshot','screen_look', '🔌 List configured MCP servers and their status', P({})),
     fn('mcp_call', '🔌 Call a tool on a connected MCP server (auto-selects by name match)', P({ server_name: S('Server name or partial match'), tool: S('Tool name to call on that server'), args: S('Arguments object as needed by that tool') }, ['server_name','tool'])),
     fn('delegate_task', '🧩 Delegate an independent sub-task to a separate mini-agent (keeps your own context lean, runs in fast mode, returns final result only)', P({ task: S('The self-contained sub-task to delegate') }, ['task'])),
     fn('run_code', '▶️ Execute a code snippet in an isolated sandbox and return output', P({ language: S('python/javascript/node/bash/typescript'), code: S('Code to run') }, ['language','code'])),
@@ -722,6 +794,12 @@ function getToolDefs() {
     fn('build_profile_readme', '👤 Write/update the special profile README shown on github.com/<username> — bio, tech badges, featured projects, stats card', P({ username: S('GitHub username') }, ['username'])),
     fn('build_project', '🚀 Design and ship a COMPLETE new open-source project (architecture, all files, README, tests, CI, LICENSE) to a brand new GitHub repo in one call', P({ idea: S('Description of the project to build'), private: B('Make repo private') }, ['idea'])),
     fn('analyze_image', '🖼️ Analyze/describe an image from a URL using vision AI', P({ image_url: S('Public image URL'), question: S('What to ask about the image') }, ['image_url'])),
+    fn('screen_screenshot', '📸 Take a screenshot of the current screen', P({ save_as: S('Filename to save as (optional)') })),
+    fn('screen_look', '👁️ Take a screenshot AND describe what\'s on screen right now using vision AI — use this to "see" the desktop before deciding what to click/type', P({ question: S('What specifically to look for'), save_as: S('Filename (optional)') })),
+    fn('mouse_move', '🖱️ Move the mouse cursor to screen coordinates', P({ x: N('X coordinate'), y: N('Y coordinate') }, ['x','y'])),
+    fn('mouse_click', '🖱️ Click the mouse (optionally at coordinates first)', P({ x: N('X coordinate (optional)'), y: N('Y coordinate (optional)'), button: S('left or right (default left)') })),
+    fn('keyboard_type', '⌨️ Type text as real keyboard input', P({ text: S('Text to type') }, ['text'])),
+    fn('keyboard_key', '⌨️ Press a specific key or combo (e.g. Return, Escape, ctrl+c)', P({ key: S('Key or combo to press') }, ['key'])),
     fn('web_search', '🌐 Search the web for information, docs, solutions', P({ query: S('Search query - be specific for better results'), num_results: N('Number of results (default 8)') }, ['query'])),
     fn('fetch_url', '🌐 Fetch and read any URL - websites, docs, APIs, GitHub raw files', P({ url: S('Full URL to fetch') }, ['url'])),
     fn('deep_research', '🔬 Deep multi-source research on a topic - searches + reads multiple pages and synthesizes findings', P({ topic: S('Topic to research thoroughly'), depth: N('Research depth 1-3 (default 2)') }, ['topic'])),
@@ -775,7 +853,7 @@ function getToolDefs() {
     fn('vscode_open', '💻 Open file or path in VS Code', P({ path: S('Path to open (file or directory)'), line: N('Line number to jump to') })),
     fn('vscode_open_folder', '💻 Open a folder as VS Code workspace', P({ path: S('Folder path') })),
     fn('vscode_install_extension', '💻 Install a VS Code extension', P({ extension_id: S('Extension ID like esbenp.prettier-vscode') }, ['extension_id'])),
-    fn('vscode_list_extensions','github_whoami','github_list_my_repos','mcp_list_servers','recall_skills', '💻 List installed VS Code extensions', P({})),
+    fn('vscode_list_extensions','github_whoami','github_list_my_repos','mcp_list_servers','recall_skills','screen_screenshot','screen_look', '💻 List installed VS Code extensions', P({})),
     fn('vscode_create_workspace', '💻 Create a .code-workspace file', P({ name: S('Workspace name'), folders: A('Array of folder paths') }, ['name'])),
     fn('vscode_setup_project', '💻 Full VS Code project setup: settings, launch, tasks, snippets, workspace', P({ path: S('Project directory'), type: S('Project type: node/python/react/express') })),
     fn('vscode_create_launch', '💻 Create .vscode/launch.json for debugging', P({ path: S('Project directory'), configs: S('Custom launch configs as JSON string') })),
@@ -788,6 +866,8 @@ function getToolDefs() {
     fn('run_tests', '🧪 Run tests in a project', P({ dir: S('Project directory'), command: S('Test command (auto-detected if not provided)') })),
     fn('npm_install', '📦 Install NPM packages', P({ dir: S('Project directory'), packages: A('Package names (empty = npm install)'), save_dev: B('Save as devDependency') })),
     fn('pip_install', '🐍 Install Python packages', P({ packages: A('Package names'), dir: S('Working directory') }, ['packages'])),
+    fn('list_skills', '📚 List available capability skills (git, github, github-pr-workflow, browser, browser-search) — check this if the task needs one you haven\'t activated yet', P({})),
+    fn('activate_skill', '📚 Load a skill\'s full tools + instructions into this run (e.g. "git", "github", "github-pr-workflow", "browser", "browser-search") — call once per skill you need, then use its tools directly', P({ name: S('Skill name from list_skills') }, ['name'])),
   ];
 }
 
@@ -796,4 +876,25 @@ async function execute(name, args, ctx) {
   return await T[name](args, ctx);
 }
 
-module.exports = { execute, getToolDefs, WORKSPACE, READ_ONLY_TOOLS };
+// Tool names owned by any skill (from skills/*/SKILL.md `tools:` frontmatter) — everything
+// else is "core" and always loaded. Computed lazily so a fresh skills/ dir is picked up.
+function getSkillOwnedToolNames() {
+  const skillsSvc = require('../services/skills');
+  const owned = new Set();
+  for (const meta of skillsSvc.listSkillMeta()) {
+    for (const t of skillsSvc.resolveToolNames(meta.name)) owned.add(t);
+  }
+  return owned;
+}
+
+function getCoreToolDefs() {
+  const owned = getSkillOwnedToolNames();
+  return getToolDefs().filter(d => !owned.has(d.function.name));
+}
+
+function getToolDefsByNames(names) {
+  const set = new Set(names);
+  return getToolDefs().filter(d => set.has(d.function.name));
+}
+
+module.exports = { execute, getToolDefs, getCoreToolDefs, getToolDefsByNames, WORKSPACE, READ_ONLY_TOOLS };
