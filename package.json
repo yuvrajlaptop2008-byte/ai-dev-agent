@@ -10,6 +10,7 @@
     "run": "bash run.sh"
   },
   "dependencies": {
+    "@google/genai": "^2.11.0",
     "@octokit/rest": "^20.0.2",
     "axios": "^1.18.1",
     "better-sqlite3": "^9.4.3",

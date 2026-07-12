@@ -7,17 +7,23 @@ const FILE = path.join(__dirname, '../data/rotation.json');
 
 function load() {
   try { return JSON.parse(fs.readFileSync(FILE, 'utf8')); }
-  catch { return { openrouterKeys: [], models: [], orIdx: 0, modelIdx: 0, orFail: {} }; }
+  catch { return { openrouterKeys: [], geminiKeys: [], models: [], orIdx: 0, gmIdx: 0, modelIdx: 0, orFail: {} }; }
 }
 function save(s) { fs.mkdirSync(path.dirname(FILE), { recursive: true }); fs.writeFileSync(FILE, JSON.stringify(s)); }
 
 function setOpenrouterKeys(keys) { const s = load(); s.openrouterKeys = keys.filter(Boolean); s.orIdx = 0; save(s); }
+function setGeminiKeys(keys) { const s = load(); s.geminiKeys = keys.filter(Boolean); s.gmIdx = 0; save(s); }
 function setModelPool(models) { const s = load(); s.models = models.filter(Boolean); s.modelIdx = 0; save(s); }
 
 function getOpenrouterKey() {
   const s = load();
   if (!s.openrouterKeys.length) return process.env.OPENROUTER_API_KEY;
   return s.openrouterKeys[s.orIdx % s.openrouterKeys.length];
+}
+function getGeminiKey() {
+  const s = load();
+  if (!s.geminiKeys?.length) return process.env.GEMINI_API_KEY;
+  return s.geminiKeys[s.gmIdx % s.geminiKeys.length];
 }
 function nextModel() {
   const s = load();
@@ -33,6 +39,13 @@ function rotateOpenrouter() {
   s.orIdx = (s.orIdx + 1) % s.openrouterKeys.length;
   save(s);
   return s.openrouterKeys[s.orIdx];
+}
+function rotateGemini() {
+  const s = load();
+  if (!s.geminiKeys?.length) return null;
+  s.gmIdx = (s.gmIdx + 1) % s.geminiKeys.length;
+  save(s);
+  return s.geminiKeys[s.gmIdx];
 }
 
 // ── Adaptive model health (in-memory, resets on restart — cheap and self-healing) ──
@@ -61,7 +74,7 @@ function healthReport() {
 }
 function status() {
   const s = load();
-  return { openrouterKeys: s.openrouterKeys.length, openrouterActive: s.orIdx, models: s.models, modelIdx: s.modelIdx };
+  return { openrouterKeys: s.openrouterKeys.length, openrouterActive: s.orIdx, geminiKeys: s.geminiKeys?.length || 0, geminiActive: s.gmIdx || 0, models: s.models, modelIdx: s.modelIdx };
 }
 
-module.exports = { setOpenrouterKeys, setModelPool, getOpenrouterKey, nextModel, rotateOpenrouter, status, reportModelResult, isModelHealthy, healthReport };
+module.exports = { setOpenrouterKeys, setGeminiKeys, setModelPool, getOpenrouterKey, getGeminiKey, nextModel, rotateOpenrouter, rotateGemini, status, reportModelResult, isModelHealthy, healthReport };

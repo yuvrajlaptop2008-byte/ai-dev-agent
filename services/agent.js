@@ -34,7 +34,7 @@ cheap on tasks that don't touch git/GitHub/browser at all, and fully capable the
 1. THINK → use \`think\` to understand the real goal and unknowns
 2. PLAN → use \`make_plan\` for anything non-trivial
 3. RESEARCH → \`web_search\`/\`deep_research\`/\`fetch_url\` whenever you're not 100% sure
-4. DECIDE → use \`decide\` when there are real tradeoffs
+4. DECIDE → use \`decide\` when there are real tradeoffs; use \`cross_check\` instead when the decision is genuinely high-stakes (irreversible, costly if wrong, affects the user's real account/data) — get multiple models' independent takes rather than trusting one
 5. EXECUTE → call tools directly, no permission-asking
 6. VERIFY → re-read files, run tests, check the actual GitHub state after writing
 7. CONTINUE → if not fully done, keep going. Do not stop early or summarize prematurely.
@@ -101,6 +101,7 @@ async function runAgent(data, socket) {
   ctx.model = selectedModel;
 
   db.prepare('INSERT INTO agent_runs VALUES (?,?,?,?,?,unixepoch())').run(runId, task, 'running', '[]', null);
+  if (socket) socket.emit('agent-start', { runId, task });
 
   const messages = [{ role: 'user', content: task }];
   if (!isFast) {

@@ -110,6 +110,49 @@ Return ONLY valid JSON.`;
   catch { return { chosen: options[0], reasoning: content, confidence: 0.5 }; }
 }
 
+// ─── CROSS-CHECK — ask multiple models the same question, reconcile ────
+// For genuinely high-stakes decisions: query several different models in
+// parallel (different providers = different failure modes/biases), then
+// have one of them synthesize a final answer noting where they agreed or
+// disagreed. More reliable than trusting a single model's first answer.
+const CROSS_CHECK_POOL = ['meta-llama/llama-3.3-70b-instruct:free', 'deepseek/deepseek-chat-v3-0324:free', 'qwen/qwen3-235b-a22b:free'];
+
+async function crossCheck(question, models) {
+  const pool = (models && models.length ? models : CROSS_CHECK_POOL).slice(0, 4);
+  const results = await Promise.allSettled(pool.map(m => chat([{ role: 'user', content: question }], m, [], null, { max_tokens: 1500, temperature: 0.3 })));
+
+  const answers = results.map((r, i) => ({
+    model: pool[i],
+    ok: r.status === 'fulfilled',
+    text: r.status === 'fulfilled' ? r.value.choices[0].message.content : `(failed: ${r.reason?.message})`,
+  }));
+
+  const successful = answers.filter(a => a.ok);
+  if (successful.length === 0) return { question, answers, synthesis: 'All models failed to respond.', agreement: 'none' };
+  if (successful.length === 1) return { question, answers, synthesis: successful[0].text, agreement: 'single-source' };
+
+  const synthPrompt = `Multiple AI models were asked the same question independently. Reconcile their answers into one final answer, and note whether they agreed or where they diverged.
+
+Question: ${question}
+
+${successful.map(a => `--- ${a.model} ---\n${a.text.slice(0, 1500)}`).join('\n\n')}
+
+Return JSON:
+{
+  "synthesis": "the best reconciled final answer",
+  "agreement": "high" | "partial" | "conflicting",
+  "notes": "brief note on where models agreed/disagreed, if relevant"
+}`;
+  try {
+    const r = await chat([{ role: 'user', content: synthPrompt }], successful[0].model, [], null, { max_tokens: 1500, temperature: 0.1 });
+    let content = r.choices[0].message.content.trim().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const parsed = JSON.parse(content);
+    return { question, answers, ...parsed };
+  } catch {
+    return { question, answers, synthesis: successful[0].text, agreement: 'partial' };
+  }
+}
+
 // ─── RESEARCH ENGINE ──────────────────────────────────────
 async function synthesizeResearch(topic, sources, model) {
   const prompt = `Synthesize this research into a comprehensive summary.
@@ -303,4 +346,4 @@ async function skillsSummary() {
   } catch { return []; }
 }
 
-module.exports = { deepThink, createPlan, decide, synthesizeResearch, saveMemory, getMemory, searchMemory, saveTask, getTasks, analyzeCode, selectBestModel, learnSkill, getRelevantSkills, skillsSummary };
+module.exports = { deepThink, createPlan, decide, crossCheck, synthesizeResearch, saveMemory, getMemory, searchMemory, saveTask, getTasks, analyzeCode, selectBestModel, learnSkill, getRelevantSkills, skillsSummary };

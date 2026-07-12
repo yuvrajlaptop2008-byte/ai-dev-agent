@@ -32,6 +32,9 @@ const MODEL_PRESETS = {
   '🆓 qwq-32b':         'qwen/qwq-32b:free',
   '🆓 llama-4-maverick':'meta-llama/llama-4-maverick:free',
   '🆓 mistral-small':   'mistralai/mistral-small-3.1-24b-instruct:free',
+  '🔷 gemini-3.5-flash (native)': 'gemini-3.5-flash',
+  '🔷 gemini-2.5-flash (native)': 'gemini-2.5-flash',
+  '🔷 gemini-2.5-pro (native)':   'gemini-2.5-pro',
 };
 
 const POOL = FALLBACK_CHAIN;
@@ -74,6 +77,15 @@ function normalizeModel(model) {
 }
 
 async function chat(messages, model, tools, systemPrompt, opts = {}) {
+  const gemini = require('./gemini');
+  if (gemini.isGeminiModel(model) && !opts._fromGeminiFallback) {
+    try { return await gemini.chat(messages, model, tools, systemPrompt, opts); }
+    catch (e) {
+      // No Gemini key configured, or the call failed — fall back to the free OpenRouter pool
+      // rather than surfacing an error, since the person still gets an answer either way.
+      return chat(messages, DEFAULT_MODEL, tools, systemPrompt, { ...opts, _fromGeminiFallback: true });
+    }
+  }
   model = normalizeModel(model);
   const sysMsg = systemPrompt ? { role: 'system', content: systemPrompt } : null;
   const msgs = sysMsg ? [sysMsg, ...messages] : messages;
@@ -101,6 +113,11 @@ async function chat(messages, model, tools, systemPrompt, opts = {}) {
 }
 
 async function streamChat(data, onChunk, onDone, onError) {
+  const gemini = require('./gemini');
+  if (gemini.isGeminiModel(data.model) && !data._fromGeminiFallback) {
+    try { return await gemini.streamChat(data, onChunk, onDone, onError); }
+    catch (e) { return streamChat({ ...data, model: DEFAULT_MODEL, _fromGeminiFallback: true }, onChunk, onDone, onError); }
+  }
   const { messages, systemPrompt, tools } = data;
   let model = normalizeModel(data.model);
   const msgs = systemPrompt ? [{ role: 'system', content: systemPrompt }, ...messages] : messages;

@@ -240,7 +240,70 @@ Added to tools/index.js T{} + getToolDefs() + READ_ONLY_TOOLS (screen_screenshot
 - routes/webhook.js: POST /api/webhook — GitHub webhook receiver. issues.opened → auto-label needs-triage. issues.labeled with label ai-fix → auto-runs contributor.solveIssue. HMAC verify via GITHUB_WEBHOOK_SECRET env (optional)
 - To activate: repo Settings → Webhooks → Payload URL https://your-host/api/webhook, json, event: Issues
 
-## Workflow For Future Requests
+## v20 (native Gemini + multi-model reasoning + real audit — found & fixed an actual bug)
+User asked to "check all, make it more advanced/capable" — did a genuine systematic audit
+(not just adding features), documented here because it found something real.
+
+### AUDIT METHOD (repeat this before claiming "everything works" in future)
+1. `node -e require(...)` every service/route — catches syntax/import errors only
+2. Boot the real server, curl every GET+POST route with real payloads — catches route/handler
+   contract bugs `require()` can't see
+3. Cross-referenced every frontend `fetch()` call string against every backend `router.*()`
+   path — zero mismatches found
+4. Unit-tested new translation logic with constructed inputs by placing a throwaway test file
+   inside services/ (so relative requires resolve) rather than trusting require()-succeeds
+5. **Live Socket.IO client test** (socket.io-client from frontend/node_modules — not a root
+   dep) against a real running server — this is what REST/require checks miss, and it's what
+   caught the real bug below
+
+### REAL BUG FOUND AND FIXED: agent-start was never emitted on a fresh run
+During the v18 skills-architecture refactor (runAgent/continueAgent/coreLoop split),
+`socket.emit('agent-start', ...)` ended up ONLY inside `continueAgent()` (with `resumed:true`)
+— never present in `runAgent()`. Effect: on every FRESH agent run, Agent.jsx's `agent-start`
+listener (which sets `currentRunId`) never fired — the Stop button and post-stop Continue
+button had no runId to target on a first run, only after a resume. Fixed: added the matching
+`socket.emit('agent-start', { runId, task })` right after the DB insert in `runAgent()`.
+Verified via live socket test: fires with a real runId on a fresh run; stop-agent/
+agent-stop-ack round-trip using that runId works end-to-end. Lesson: after any future refactor
+of the socket event surface, re-run the live socket test, not just require()/REST checks.
+
+### Native Gemini integration (real API, verified against current docs)
+- Installed `@google/genai` (real npm package)
+- services/gemini.js: chat()/streamChat() match openrouter.js's signature exactly.
+  toGeminiContents() translates full OpenAI-shape history — including past assistant
+  tool_calls and tool-role results — into Gemini's contents[]/functionResponse format (tracks
+  tool_call_id→name across the walk, since Gemini's functionResponse needs the name not an id).
+  toGeminiTools() maps our tool defs to functionDeclarations (parametersJsonSchema accepts our
+  JSON Schema directly). toUnifiedResponse() maps response.functionCalls back to our internal
+  {tool_calls:[{id,function:{name,arguments}}]} shape — agent.js's coreLoop needs zero changes.
+- services/openrouter.js: chat()/streamChat() check `gemini.isGeminiModel(model)` (matches bare
+  `gemini-*`, NOT OpenRouter's `google/gemini-*` — confirmed no collision) before any
+  OpenRouter-specific logic — delegates to gemini.js, falls back to the free OpenRouter pool if
+  no Gemini key configured or the call fails. Every existing call site already goes through
+  `require('./openrouter').chat/streamChat`, so this reaches the whole app with zero other
+  files needing to change — deliberate choice to avoid missing a call site.
+- rotation.js: parallel Gemini key pool (setGeminiKeys/getGeminiKey/rotateGemini), same pattern
+  as OpenRouter's existing 3-key rotation. status() reports both.
+- MODEL_PRESETS: added 🔷 gemini-3.5-flash/2.5-flash/2.5-pro (native) — auto-appear in every
+  model picker with zero frontend changes (they just read models.presets).
+- Settings.jsx: Gemini key rotation panel added; fixed a stale model-pool placeholder that
+  still referenced removed paid models.
+- .env.example: added GEMINI_API_KEY (optional).
+
+### brain.crossCheck — multi-model reasoning
+Asks the same question to several different free models in parallel (Promise.allSettled,
+different providers = different failure modes/biases), then has one synthesize a final answer
+noting agreement/disagreement. New agent tool `cross_check` (core, always available). SYSTEM
+prompt's DECIDE step: routine tradeoffs → `decide`, high-stakes/irreversible → `cross_check`.
+
+### Known gaps from this pass
+- Gemini streaming tool-calls: simplified (flags sawToolCall, doesn't assemble partial
+  function-call args across chunks) — fine since the Chat tab doesn't pass tools today, would
+  need finishing if that changes
+- suggestSkills(task) exists but isn't auto-called in agent.js yet
+- desktop skill unverifiable in this sandbox (no display) — real test needs the user's machine
+
+
 1. Read this file only — don't `ls`/`view` the whole repo again
 2. Locate exact file(s) via map above
 3. Use str_replace/python patch for small edits; only rewrite whole file if net-new

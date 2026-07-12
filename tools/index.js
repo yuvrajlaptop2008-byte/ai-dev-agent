@@ -62,6 +62,11 @@ const T = {
     return JSON.stringify(d, null, 2);
   },
 
+  cross_check: async ({ question, models }) => {
+    const r = await brain.crossCheck(question, models);
+    return `Agreement: ${r.agreement}\n\n${r.synthesis}${r.notes ? `\n\nNotes: ${r.notes}` : ''}`;
+  },
+
   analyze_code: async ({ code, language, task }, ctx) => {
     return brain.analyzeCode(code, language, task, ctx?.model || 'meta-llama/llama-3.3-70b-instruct:free');
   },
@@ -747,6 +752,7 @@ function getToolDefs() {
     fn('deep_think', '🧠 Deep AI-powered analysis of a complex problem', P({ problem: S('The problem to analyze deeply'), context: S('Additional context') }, ['problem'])),
     fn('make_plan', '📋 Create a structured multi-phase plan for achieving a goal', P({ goal: S('The goal to achieve'), context: S('Additional context or constraints') }, ['goal'])),
     fn('decide', '⚖️ AI-powered decision making between options', P({ options: A('List of options to choose from'), criteria: S('Decision criteria and constraints') }, ['options', 'criteria'])),
+    fn('cross_check', '🧠🧠 High-stakes reasoning: ask multiple different AI models the same question in parallel and reconcile their answers — use for decisions where being wrong is costly, not routine questions', P({ question: S('The question to cross-check across models'), models: A('Optional: specific model IDs to use (default: 3 diverse free models)') }, ['question'])),
     fn('analyze_code', '🔍 Deep AI analysis of code for bugs, security, performance', P({ code: S('Code to analyze'), language: S('Programming language'), task: S('What to look for') }, ['code'])),
 
     // MEMORY
