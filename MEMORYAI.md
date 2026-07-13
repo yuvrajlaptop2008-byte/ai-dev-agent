@@ -346,3 +346,26 @@ rather than being the deliberate command itself.
 bash/bash_interactive, git_terminal, open_app, npm_install/pip_install — same trust boundary as
 a human typing into a terminal, not a bug. clipboard_copy reconfirmed already-safe (text goes
 through stdin pipe, never touches the shell command string).
+
+## v22 (webhook signature verification was silently broken — fixed)
+Continued the audit pattern from v21. Found a second real correctness bug in routes/webhook.js's
+GitHub webhook HMAC verification:
+
+1. Wrong bytes hashed: express.json() in server.js had no verify callback, so req.body was the
+   PARSED object. webhook.js computed the HMAC over JSON.stringify(req.body) — a re-
+   serialization — not the original raw bytes GitHub actually signed. Key ordering/number
+   formatting/escaping differences mean this would very likely never match a real GitHub
+   webhook's signature once GITHUB_WEBHOOK_SECRET was configured — every legitimate delivery
+   would have been silently rejected as "bad signature." With no secret set, verify() returns
+   true unconditionally, which is exactly what was masking this — it only breaks once someone
+   turns signature checking ON, which is precisely when it matters. Fixed: express.json() now
+   takes verify:(req,res,buf)=>{req.rawBody=buf}, webhook.js hashes req.rawBody instead.
+2. Timing-unsafe comparison: sig === expected is a plain string compare, vulnerable in
+   principle to a timing attack. Fixed: crypto.timingSafeEqual() with an explicit length check
+   first (timingSafeEqual throws rather than returning false on length-mismatched buffers, so
+   the length check has to happen before calling it).
+
+Verified against a REAL HMAC computed the same way GitHub computes it (raw JSON body -> HMAC-
+SHA256 -> hex, sha256= prefix), via a real HTTP request to a running server: valid signature ->
+200, tampered signature -> 401, missing signature -> 401. Confirms this was actually broken
+before and genuinely works now.

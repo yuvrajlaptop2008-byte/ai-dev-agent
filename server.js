@@ -11,7 +11,7 @@ const httpServer = createServer(app);
 const io = new Server(httpServer, { cors: { origin: '*' }, maxHttpBufferSize: 1e8 });
 
 app.use(cors());
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '50mb', verify: (req, res, buf) => { req.rawBody = buf; } }));
 
 // Routes
 app.use('/api/chat', require('./routes/chat'));

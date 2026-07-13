@@ -8,9 +8,13 @@ const SECRET = process.env.GITHUB_WEBHOOK_SECRET || '';
 function verify(req) {
   if (!SECRET) return true;
   const sig = req.headers['x-hub-signature-256'];
-  if (!sig) return false;
-  const hmac = crypto.createHmac('sha256', SECRET).update(JSON.stringify(req.body)).digest('hex');
-  return sig === `sha256=${hmac}`;
+  if (!sig || typeof sig !== 'string' || !req.rawBody) return false;
+  const hmac = crypto.createHmac('sha256', SECRET).update(req.rawBody).digest('hex');
+  const expected = `sha256=${hmac}`;
+  const a = Buffer.from(sig);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
 }
 
 router.post('/', async (req, res) => {
