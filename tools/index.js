@@ -27,6 +27,23 @@ const sh = async (cmd, cwd = WORKSPACE, timeout = 45000) => {
   } catch (e) { return `EXIT ${e.code}:\n${((e.stdout || '') + (e.stderr || e.message)).slice(0, 4000)}`; }
 };
 
+// Runs a command with argv passed as a real array — no shell involved, so arbitrary text
+// (keystrokes, URLs, clipboard content) can never be interpreted as shell syntax. Use this
+// instead of sh() any time a value that isn't a command the agent intentionally chose to run
+// gets interpolated (e.g. text a user typed, a URL, page content) — sh()/exec() is fine when
+// the "command" itself IS the deliberate action (bash tool, open_app).
+const spawnCmd = (bin, args, opts = {}) => new Promise((resolve) => {
+  const { spawn } = require('child_process');
+  try {
+    const p = spawn(bin, args, { timeout: opts.timeout || 15000, env: { ...process.env, HOME: '/tmp' } });
+    let out = '', err = '';
+    p.stdout?.on('data', d => out += d);
+    p.stderr?.on('data', d => err += d);
+    p.on('error', e => resolve(`❌ ${bin} not available: ${e.message}`));
+    p.on('close', code => resolve(code === 0 ? (out || `✅ ${bin} ${args[0] || ''} done`) : `EXIT ${code}: ${err || out}`));
+  } catch (e) { resolve(`❌ ${bin} failed: ${e.message}`); }
+});
+
 // ═══════════════════════════════════════════════════════════
 // TOOL IMPLEMENTATIONS
 // ═══════════════════════════════════════════════════════════
@@ -140,9 +157,23 @@ const T = {
   list_files: async ({ path: p, recursive, pattern }) => {
     const dir = p ? abs(p) : WORKSPACE;
     if (recursive) {
-      const pat = pattern ? `--include="${pattern}"` : '';
-      const { stdout } = await execAsync(`find "${dir}" ${pat} -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/__pycache__/*" | sort | head -300`).catch(() => ({ stdout: '' }));
-      return stdout || 'Empty directory';
+      const SKIP = new Set(['node_modules', '.git', '__pycache__']);
+      const matcher = pattern ? new RegExp('^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$') : null;
+      const out = [];
+      async function walk(d) {
+        if (out.length >= 300) return;
+        let entries;
+        try { entries = await fs.readdir(d, { withFileTypes: true }); } catch { return; }
+        for (const e of entries) {
+          if (out.length >= 300) return;
+          if (SKIP.has(e.name)) continue;
+          const full = path.join(d, e.name);
+          if (e.isDirectory()) await walk(full);
+          else if (!matcher || matcher.test(e.name)) out.push(full);
+        }
+      }
+      await walk(dir);
+      return out.sort().join('\n') || 'Empty directory';
     }
     const items = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
     return items.map(i => `${i.isDirectory() ? '📁' : '📄'} ${i.name}`).join('\n') || 'Empty';
@@ -169,9 +200,30 @@ const T = {
 
   search_in_files: async ({ pattern, path: p, file_ext }) => {
     const dir = p ? abs(p) : WORKSPACE;
-    const inc = file_ext ? `--include="*.${file_ext}"` : '';
-    const { stdout } = await execAsync(`grep -r ${inc} -n "${pattern}" "${dir}" 2>/dev/null | head -50`).catch(() => ({ stdout: '' }));
-    return stdout || 'Not found';
+    const SKIP = new Set(['node_modules', '.git', '__pycache__']);
+    let re;
+    try { re = new RegExp(pattern); } catch { re = new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')); }
+    const results = [];
+    async function walk(d) {
+      if (results.length >= 50) return;
+      let entries;
+      try { entries = await fs.readdir(d, { withFileTypes: true }); } catch { return; }
+      for (const e of entries) {
+        if (results.length >= 50) return;
+        if (SKIP.has(e.name)) continue;
+        const full = path.join(d, e.name);
+        if (e.isDirectory()) { await walk(full); continue; }
+        if (file_ext && !e.name.endsWith('.' + file_ext)) continue;
+        let content;
+        try { content = await fs.readFile(full, 'utf8'); } catch { continue; }
+        const lines = content.split('\n');
+        for (let i = 0; i < lines.length && results.length < 50; i++) {
+          if (re.test(lines[i])) results.push(`${full}:${i + 1}:${lines[i].slice(0, 200)}`);
+        }
+      }
+    }
+    await walk(dir);
+    return results.join('\n') || 'Not found';
   },
 
   // ── 5. WEB / BROWSER ─────────────────────────────────
@@ -224,8 +276,9 @@ const T = {
   },
 
   open_url: async ({ url }) => {
-    const cmd = process.platform === 'darwin' ? `open "${url}"` : process.platform === 'win32' ? `start "" "${url}"` : `xdg-open "${url}"`;
-    return sh(`${cmd} 2>&1 || echo "no display available, URL: ${url}"`);
+    const bin = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd' : 'xdg-open';
+    const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
+    return spawnCmd(bin, args);
   },
 
   open_app: async ({ command }) => {
@@ -350,7 +403,8 @@ const T = {
 
   // ── DESKTOP CONTROL — real keyboard, mouse, screen vision ─
   screen_screenshot: async ({ save_as }) => {
-    const outPath = abs(save_as || `screenshot_${Date.now()}.png`);
+    const safeName = (save_as || `screenshot_${Date.now()}.png`).replace(/[^a-zA-Z0-9._/-]/g, '_');
+    const outPath = abs(safeName);
     await fs.mkdir(path.dirname(outPath), { recursive: true });
     let cmd;
     if (process.platform === 'darwin') cmd = `screencapture -x "${outPath}"`;
@@ -373,39 +427,38 @@ const T = {
   },
 
   mouse_move: async ({ x, y }) => {
-    let cmd;
-    if (process.platform === 'darwin') cmd = `cliclick m:${x},${y} 2>&1 || echo "cliclick not installed (brew install cliclick)"`;
-    else if (process.platform === 'win32') cmd = `powershell -command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${x},${y})"`;
-    else cmd = `xdotool mousemove ${x} ${y} 2>&1 || echo "xdotool not installed (apt install xdotool)"`;
-    return sh(cmd);
+    const nx = Number(x), ny = Number(y);
+    if (!Number.isFinite(nx) || !Number.isFinite(ny)) return '❌ x and y must be numbers';
+    if (process.platform === 'darwin') return spawnCmd('cliclick', [`m:${nx},${ny}`]);
+    if (process.platform === 'win32') return spawnCmd('powershell', ['-command', `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${nx},${ny})`]);
+    return spawnCmd('xdotool', ['mousemove', String(nx), String(ny)]);
   },
 
   mouse_click: async ({ x, y, button }) => {
-    const btn = button || 'left';
-    let cmd;
+    const btn = button === 'right' ? 'right' : 'left';
     if (x !== undefined && y !== undefined) await T.mouse_move({ x, y });
-    if (process.platform === 'darwin') cmd = `cliclick c:. 2>&1 || echo "cliclick not installed"`;
-    else if (process.platform === 'win32') cmd = `powershell -command "Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public class M{[DllImport(\\"user32.dll\\")] public static extern void mouse_event(int f,int x,int y,int d,int e);}'; [M]::mouse_event(${btn === 'right' ? '0x0008,0,0,0,0); [M]::mouse_event(0x0010' : '0x0002,0,0,0,0); [M]::mouse_event(0x0004'},0,0,0,0)"`;
-    else cmd = `xdotool click ${btn === 'right' ? 3 : 1} 2>&1 || echo "xdotool not installed"`;
-    return sh(cmd);
+    if (process.platform === 'darwin') return spawnCmd('cliclick', ['c:.']);
+    if (process.platform === 'win32') {
+      const downUp = btn === 'right' ? ['0x0008', '0x0010'] : ['0x0002', '0x0004'];
+      return spawnCmd('powershell', ['-command', `Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public class M{[DllImport("user32.dll")] public static extern void mouse_event(int f,int x,int y,int d,int e);}'; [M]::mouse_event(${downUp[0]},0,0,0,0); [M]::mouse_event(${downUp[1]},0,0,0,0)`]);
+    }
+    return spawnCmd('xdotool', ['click', btn === 'right' ? '3' : '1']);
   },
 
   keyboard_type: async ({ text }) => {
-    let cmd;
-    if (process.platform === 'darwin') cmd = `osascript -e 'tell application "System Events" to keystroke "${text.replace(/"/g, '\\"')}"' 2>&1`;
-    else if (process.platform === 'win32') cmd = `powershell -command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('${text.replace(/'/g, "''")}')"`;
-    else cmd = `xdotool type "${text.replace(/"/g, '\\"')}" 2>&1 || echo "xdotool not installed"`;
-    return sh(cmd);
+    const str = String(text ?? '');
+    if (process.platform === 'darwin') return spawnCmd('osascript', ['-e', `tell application "System Events" to keystroke "${str.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`]);
+    if (process.platform === 'win32') return spawnCmd('powershell', ['-command', `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('${str.replace(/'/g, "''")}')`]);
+    return spawnCmd('xdotool', ['type', '--', str]);
   },
 
   keyboard_key: async ({ key }) => {
-    // key examples: "Return", "Escape", "ctrl+c", "alt+Tab"
-    let cmd;
-    if (process.platform === 'darwin') cmd = `osascript -e 'tell application "System Events" to key code (${key})' 2>&1 || echo "use keyboard_type for text, this platform needs key codes"`;
-    else if (process.platform === 'win32') cmd = `powershell -command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('{${key}}')"`;
-    else cmd = `xdotool key ${key} 2>&1 || echo "xdotool not installed"`;
-    return sh(cmd);
+    const k = String(key ?? '');
+    if (process.platform === 'darwin') return spawnCmd('osascript', ['-e', `tell application "System Events" to keystroke "${k.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`]);
+    if (process.platform === 'win32') return spawnCmd('powershell', ['-command', `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('{${k.replace(/'/g, "''")}}')`]);
+    return spawnCmd('xdotool', ['key', '--', k]);
   },
+
 
   web_search: async ({ query, num_results }) => {
     const results = await browser.search(query, num_results || 8);
@@ -676,7 +729,8 @@ const T = {
 
   // ── 12. CODE GENERATION ─────────────────────────────
   create_project: async ({ name, type, description }) => {
-    const projDir = path.join(WORKSPACE, name);
+    const safeName = String(name).replace(/[^a-zA-Z0-9._-]/g, '_');
+    const projDir = path.join(WORKSPACE, safeName);
     await fs.mkdir(projDir, { recursive: true });
     const results = [];
 

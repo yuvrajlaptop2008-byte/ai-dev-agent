@@ -309,3 +309,40 @@ prompt's DECIDE step: routine tradeoffs → `decide`, high-stakes/irreversible �
 3. Use str_replace/python patch for small edits; only rewrite whole file if net-new
 4. Update this file's "Decisions" / "Pending" sections when architecture changes
 5. Build frontend + commit + push at the end, one shot
+
+## v21 (security audit — command injection found and fixed across 6 tools)
+User said "check it and fix it as you want" — extended the v20 audit method with a targeted
+sweep for shell-injection risk: any tool where an agent-suppliable string gets interpolated
+into a string passed to sh()/exec() (which runs via /bin/sh -c) rather than passed as a real
+argv array. Grepped for the pattern, found 6 real instances, fixed all of them, then wrote
+actual exploit-shaped payloads ("; touch /tmp/PWNED; echo " etc.) and confirmed via live
+tools.execute() calls that they no longer break out — not just "looks safer," verified.
+
+### Added: spawnCmd(bin, args, opts) helper in tools/index.js
+Runs a binary with a real argv array via child_process.spawn (no shell:true) — arbitrary text
+in args can never be interpreted as shell syntax, since no shell parses it at all. Preferred
+over sh()/exec() any time the "unsafe" value is incidental data (keystrokes, a URL, a filename)
+rather than being the deliberate command itself.
+
+### Fixed (confirmed exploitable before, confirmed closed after — not just theoretical)
+- open_url: now spawnCmd('xdg-open', [url]) instead of shell-string interpolation
+- mouse_move/mouse_click: x/y Number()-coerced + isFinite-validated (fails closed), Linux/macOS
+  use spawnCmd argv instead of shell strings
+- keyboard_type/keyboard_key: Linux path now spawnCmd('xdotool',['type','--',str]) — real argv,
+  fully immune. macOS/Windows still build an AppleScript/PowerShell string (required by those
+  tools' own syntax) but execute via spawnCmd (no outer shell layer), removing the shell-
+  metacharacter injection surface even though inner script-language escaping still applies there
+- search_in_files / list_files (recursive): REWRITTEN ENTIRELY in pure Node (manual recursive
+  walk + regex matching) instead of shelling out to grep/find — shell removed completely, not
+  just escaped. Bonus: no longer depends on grep/find being installed, works on Windows too.
+  Verified functionally correct (real files found, real module.exports matches with correct
+  file:line output) AND verified an injection payload in `path` just fails as "not found."
+- screen_screenshot (save_as) / create_project (name): sanitized to [^a-zA-Z0-9._-] -> _ before
+  touching any shell string. create_project's generated file CONTENT still uses the original
+  unsanitized name (correct — fs.writeFile never touches a shell); only the one line that does
+  shell out (vite scaffold) needed the sanitized version, via projDir which was already correct.
+
+### NOT changed (deliberately — these ARE "run an arbitrary command" tools by design)
+bash/bash_interactive, git_terminal, open_app, npm_install/pip_install — same trust boundary as
+a human typing into a terminal, not a bug. clipboard_copy reconfirmed already-safe (text goes
+through stdin pipe, never touches the shell command string).
