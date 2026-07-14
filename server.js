@@ -112,6 +112,23 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => console.log('Client disconnected:', socket.id));
 });
 
+// Any error that reaches here (thrown or next(err)'d from a route) gets a proper JSON
+// response instead of Express's default HTML error page — the frontend does
+// fetch(...).then(r => r.json()) everywhere with no r.ok check, so an HTML error page
+// would otherwise crash client-side with a confusing "Unexpected token <" instead of
+// surfacing the real error message.
+app.use((err, req, res, next) => {
+  console.error('Unhandled route error:', err);
+  if (res.headersSent) return next(err);
+  res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
+});
+
+// A single bad async operation anywhere (a route handler, a socket handler, a background
+// timer) should never take down the whole server for every other user's session. Log it
+// and keep running instead of letting Node's default behavior terminate the process.
+process.on('unhandledRejection', (reason) => console.error('Unhandled rejection (server kept running):', reason));
+process.on('uncaughtException', (err) => console.error('Uncaught exception (server kept running):', err));
+
 global.io = io;
 // Auto-refresh OpenRouter model list every 6h
 require('./services/openrouter').getModels(true).catch(()=>{});

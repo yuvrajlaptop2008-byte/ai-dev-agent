@@ -369,3 +369,28 @@ Verified against a REAL HMAC computed the same way GitHub computes it (raw JSON 
 SHA256 -> hex, sha256= prefix), via a real HTTP request to a running server: valid signature ->
 200, tampered signature -> 401, missing signature -> 401. Confirms this was actually broken
 before and genuinely works now.
+
+## v23 (server-wide error handling — errors were returning HTML, could crash client-side)
+Continued the audit. Checked every route file for unhandled-error risk (agent.js, memory.js,
+models.js, rotation.js had no explicit try/catch, unlike the others which use a shared h()
+wrapper). Conclusion: none of these could crash the whole Node PROCESS (all synchronous
+db calls that Express 4 catches automatically, or internally-guarded async like getModels()) -
+but a real, separate bug: any error that DID occur returned Express's default HTML error page,
+and every frontend fetch() call does .then(r => r.json()) with no r.ok check - meaning any
+backend error would crash client-side with a confusing "Unexpected token <" instead of ever
+showing the real message. Verified real: corrupted an agent_runs.steps field, hit GET
+/api/agent/runs/:id, confirmed it returned an HTML page before the fix.
+
+Fixed in server.js:
+- Global Express error-handling middleware (4-arg signature, registered after all route
+  mounts) - converts ANY error reaching it into {error: message} JSON instead of HTML.
+  Verified with the same corrupted-steps test: now returns Content-Type: application/json,
+  status 500, {"error":"Unexpected token 'N', ..."} - the real underlying error message,
+  properly JSON-parseable by the frontend.
+- process.on('unhandledRejection'/'uncaughtException') - log and keep running instead of
+  Node's default behavior of terminating the whole process on an unhandled async rejection
+  anywhere (a route, a socket handler, a background timer). One bad request should never take
+  the server down for every other session.
+
+Verified no regression: normal GET /api/models and /api/agent/runs still return 200 after
+adding the middleware.
