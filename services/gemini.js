@@ -119,4 +119,4 @@ async function streamChat(data, onChunk, onDone, onError) {
   }
 }
 
-module.exports = { chat, streamChat, isGeminiModel, GEMINI_MODELS, DEFAULT_GEMINI_MODEL };
+module.exports = { chat, streamChat, isGeminiModel, GEMINI_MODELS, DEFAULT_GEMINI_MODEL, toGeminiContents, toGeminiTools, toUnifiedResponse };

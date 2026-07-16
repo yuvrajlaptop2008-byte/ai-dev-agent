@@ -19,6 +19,8 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
       - run: npm install --ignore-scripts
-      - run: node -e "require('./db'); require('./services/openrouter'); console.log('✅ Modules OK')"
+      - run: cd frontend && npm install
+      - name: Run test suite
+        run: npm test
       - name: Build frontend
-        run: cd frontend && npm install && npm run build
+        run: cd frontend && npm run build

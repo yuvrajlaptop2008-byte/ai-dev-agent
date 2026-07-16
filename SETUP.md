@@ -22,6 +22,7 @@ PORT=3001
 ```
 - GitHub token: https://github.com/settings/tokens/new → scopes: `repo`, `workflow`
 - OpenRouter key: https://openrouter.ai/keys
+- (Optional) Gemini key for native Gemini models: https://aistudio.google.com/apikey — add as `GEMINI_API_KEY`
 
 ## 4. Run (one command)
 ```bash

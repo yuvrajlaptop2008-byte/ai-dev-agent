@@ -394,3 +394,44 @@ Fixed in server.js:
 
 Verified no regression: normal GET /api/models and /api/agent/runs still return 200 after
 adding the middleware.
+
+## v24 (real automated test suite — turns manual audits into something that runs itself)
+User invited open-ended upgrades. Highest-leverage addition: every manual verification done
+across v20-v23 (module loads, skill/tool wiring consistency, injection-payload regression,
+Gemini translation correctness, webhook HMAC against a real signature, REST contracts, live
+Socket.IO agent lifecycle) is now codified as an actual test suite instead of living only in
+chat history / one-off scripts I re-derive each session.
+
+- tests/*.test.js using node:test + node:assert (built into Node 18+, zero new dependency)
+- tests/_server-helper.js: fork()'s a real server.js child process on a dedicated test port
+  (3099, avoids clashing with a dev server on 3001), waits for the real startup banner before
+  resolving. startServer(env, {clean:false}) lets a test seed data/store.json and restart
+  without the helper's normal data-dir wipe stepping on the fixture — found and fixed this
+  exact bug in the test helper itself while building it (first run: 404 instead of 500 because
+  the corrupted-fixture file was being deleted by the next startServer() call before the
+  restarted server could read it).
+- tests/modules.test.js: every service/route requires cleanly
+- tests/skills.test.js: every skill's declared tools resolve to real T{} implementations (loops
+  all 6 skills, not just one), github-pr-workflow correctly cascades to include git+github,
+  core tool set has zero overlap with any skill-owned tool
+- tests/security.test.js: the actual exploit payloads from the v21 audit
+  ('"; touch /tmp/PWNED; echo "') run against keyboard_type/open_url/mouse_move/
+  search_in_files and assert the marker file was never created — this is the regression test
+  that would catch it if someone ever reintroduces shell-string interpolation here
+- tests/gemini.test.js: exported the pure translation functions (toGeminiContents/
+  toGeminiTools/toUnifiedResponse) from services/gemini.js properly instead of the eval-hack
+  used to test them manually in v20 — unit tests now check exact translated shapes
+- tests/webhook.test.js: the real HMAC-computed-the-way-GitHub-does test from v22, codified
+- tests/api.test.js: REST contract + the "errors return JSON not HTML" regression test from v23
+- tests/socket.test.js: live Socket.IO test that agent-start fires with a real runId on a FRESH
+  run — this is the exact regression test for the v20 bug
+
+Wired: package.json `"test": "node --test \"tests/**/*.test.js\""` (bare `node --test tests/`
+resolves tests/ as a module path and fails on this Node version — glob form is required).
+.github/workflows/ci.yml reordered: installs frontend deps BEFORE running tests (socket.test.js
+needs frontend/node_modules/socket.io-client) and BEFORE building, runs `npm test` as a real CI
+gate now instead of just a `require()` smoke check.
+
+Full suite: 65/65 passing. README.md and SETUP.md updated to reflect actual current
+capabilities (skills architecture, desktop control, native Gemini, cross_check, learned skills,
+test suite) — README had drifted stale since v17-era wording.
