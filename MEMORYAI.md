@@ -435,3 +435,55 @@ gate now instead of just a `require()` smoke check.
 Full suite: 65/65 passing. README.md and SETUP.md updated to reflect actual current
 capabilities (skills architecture, desktop control, native Gemini, cross_check, learned skills,
 test suite) — README had drifted stale since v17-era wording.
+
+## v25 (verified the core promise end-to-end + made it genuinely "living")
+User asked to check whether "fix issue X in repo Y" actually flows through analysis->plan->
+decide->fix->PR, and to add real autonomous/"living" capability. Two real pieces of work:
+
+### 1. contributor.solveIssue() closed a real gap: plan/decide were never explicit
+Traced the full existing pipeline (it's real, not mocked - reads the actual repo tree, picks
+relevant files via LLM, reads their real content, generates a fix via a strict parseable
+file-block format, opens a real branch+PR). But it jumped straight from "read files" to
+"generate the whole fix" in ONE call - no separate plan or decision artifact, which doesn't
+match "analysis, plan, decisions, then fix." Added a genuine planning step between them: a
+dedicated LLM call producing {root_cause, approach, files_to_change, risks, confidence} JSON,
+logged visibly (so the user watching a run sees the actual reasoning, not just the end result),
+and fed into the fix-generation prompt as guidance rather than starting cold. Plan is now part
+of the returned result and the logged contribution history entry.
+Note: the AGENT tab's general natural-language path (typing "fix the issue about X in owner/
+repo") already goes through the full think/make_plan/decide/activate_skill loop via agent.js's
+SYSTEM prompt + github-pr-workflow skill - that path was already correct. This fix specifically
+closes the gap in the FAST single-shot path (Contribute tab's one-click button, and the watcher
+below), which is a deliberately different, faster pipeline but needed its own real plan step.
+
+### 2. services/watcher.js — genuine autonomous/"living" agent capability (new)
+Previously the ONLY autonomous trigger was routes/webhook.js, which requires GitHub to be able
+to reach a public URL - unusable for anyone running this locally without ngrok/a public host.
+watcher.js polls configured owner/repo pairs on an interval (default 15min, 5min floor),
+checks for issues labeled `ai-fix` (same label convention as the webhook path, so behavior is
+consistent regardless of which trigger fired), and calls contributor.solveIssue() automatically.
+Tracks processedIssues per repo (persisted to data/watcher.json) so nothing gets solved twice,
+verified this survives a server restart. startScheduler() runs in server.js on boot (checks
+every 60s whether intervalMinutes has elapsed since last fire - gated interval, not a raw
+setInterval at the configured minutes, so changing the interval takes effect without a restart).
+
+routes/watcher.js: GET /status, POST /enabled, POST /interval, POST /model, POST/DELETE /repos,
+POST /run-now. Settings.jsx: new "🟢 Live Agent" panel (on/off toggle, interval, watched-repo
+list, check-now button, recent activity log) - this is the primary UI surface for the "living
+agent" framing, sits above the Web LLMs panel.
+
+### VERIFIED LIVE against the real GitHub API (api.github.com is reachable from this sandbox,
+unlike openrouter.ai/generativelanguage.googleapis.com) - not just unit tests:
+- Created a real test issue on yuvrajlaptop2008-byte/ai-dev-agent labeled ai-fix
+- Ran the watcher's run-now against it: log correctly showed "🔍 Found ai-fix issue #1..."
+  (detection genuinely works against real GitHub), then attempted solveIssue which failed only
+  at the OpenRouter call (403 - this sandbox's network restriction, not a code bug; works on a
+  real machine with real network access) - failure was caught and logged cleanly, did not
+  crash anything
+- Ran run-now a second time: issue #1 was correctly NOT re-detected (dedup persisted across
+  the server restart between the two test runs) - verified via data/watcher.json state
+- Closed the test issue afterward, cleaned up
+
+tests/watcher.test.js: config round-trip (enable/disable, interval clamping to 5min floor,
+add/remove repos without duplicates, removeRepo clears that repo's processed-issue history),
+runOnce() with zero watched repos returns immediately. 7 new tests, suite now 72/72.

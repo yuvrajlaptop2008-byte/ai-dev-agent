@@ -4,6 +4,7 @@ A fully autonomous coding agent: solves GitHub issues, ships whole projects, res
 
 ## What it does
 - **Runs until done.** No iteration cap — works until the task is verifiably complete, or you hit Stop. Every run is resumable: hit Continue after a stop and it picks up with full context and tool access intact.
+- **Actually alive.** Watch mode polls your repos on its own schedule (no public URL needed) — label an issue `ai-fix` and it gets analyzed, planned, fixed, and PR'd without you asking. Settings → Live Agent.
 - **On-demand skills.** Loads git/GitHub/browser/desktop tools only when the task needs them (`activate_skill`) — cheap on simple asks, fully capable the moment it matters. `github-pr-workflow` bundles the whole branch→code→test→commit→push→PR loop.
 - **Full GitHub control.** Issues, PRs, branches, releases, CI, repo settings, collaborators, delete/archive/transfer — treats your account as its workspace.
 - **Ships real projects.** One idea in → architecture, code, tests, README, LICENSE, CI, all pushed to a brand-new repo.

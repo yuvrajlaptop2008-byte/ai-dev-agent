@@ -25,6 +25,7 @@ app.use('/api/memory', require('./routes/memory'));
 app.use('/api/brain', require('./routes/brain'));
 app.use('/api/webhook', require('./routes/webhook'));
 app.use('/api/rotation', require('./routes/rotation'));
+app.use('/api/watcher', require('./routes/watcher'));
 app.use('/api/builder', require('./routes/builder'));
 app.use('/api/webllm', require('./routes/webllm'));
 app.use('/api/health', require('./routes/health'));
@@ -133,6 +134,7 @@ global.io = io;
 // Auto-refresh OpenRouter model list every 6h
 require('./services/openrouter').getModels(true).catch(()=>{});
 setInterval(() => require('./services/openrouter').getModels(true).catch(()=>{}), 6*60*60*1000);
+require('./services/watcher').startScheduler(); // checks every minute whether it's time to poll watched repos
 
 const PORT = process.env.PORT || 3001;
 httpServer.listen(PORT, () => {

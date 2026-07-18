@@ -93,6 +93,33 @@ Max 6 files total.`;
   addLog(`🌐 Researching if needed...`);
   const searchResults = await browser.search(`${issue.title} ${repoInfo.language || ''} fix`, 4).catch(() => []);
 
+  addLog(`📋 Planning the fix...`);
+  let plan = null;
+  try {
+    const planPrompt = `You are a senior ${repoInfo.language || ''} engineer about to fix a real GitHub issue in ${owner}/${repo}.
+
+ISSUE #${issueNumber}: ${issue.title}
+${issue.body?.slice(0, 1500) || 'No description'}
+
+Files you've read:
+${Object.keys(fileContents).join(', ') || '(none — may need new files)'}
+
+${searchResults.length ? `Research found:\n${searchResults.slice(0, 3).map(r => `- ${r.snippet}`).join('\n')}` : ''}
+
+Before writing any code, think this through. Return JSON only:
+{
+  "root_cause": "what's actually causing this issue",
+  "approach": "the fix strategy in 2-3 sentences",
+  "files_to_change": ["path1", "path2"],
+  "risks": "what could go wrong with this approach, or 'none significant'",
+  "confidence": "high" | "medium" | "low"
+}`;
+    const pr = await chat([{ role: 'user', content: planPrompt }], usedModel, [], null, { max_tokens: 800, temperature: 0.2 });
+    plan = JSON.parse(pr.choices[0].message.content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim());
+    addLog(`🧠 Root cause: ${plan.root_cause}`);
+    addLog(`📐 Approach: ${plan.approach}${plan.risks && plan.risks !== 'none significant' ? ` (risk: ${plan.risks})` : ''}`);
+  } catch { addLog('⚠️ Planning step skipped (non-fatal), proceeding directly to fix generation'); }
+
   addLog(`🧠 Generating fix...`);
   const genPrompt = `You are a senior ${repoInfo.language || ''} engineer fixing a real GitHub issue in ${owner}/${repo}.
 
@@ -100,12 +127,13 @@ ISSUE #${issueNumber}: ${issue.title}
 ${issue.body?.slice(0, 2000) || 'No description'}
 ${issue.comments?.length ? `\nDiscussion:\n${issue.comments.slice(0, 3).map(c => c.body).join('\n---\n').slice(0, 1500)}` : ''}
 
+${plan ? `Your plan for this fix:\nRoot cause: ${plan.root_cause}\nApproach: ${plan.approach}\n${plan.risks && plan.risks !== 'none significant' ? `Watch out for: ${plan.risks}\n` : ''}` : ''}
 Current file contents:
 ${Object.entries(fileContents).map(([p, c]) => `--- ${p} ---\n${c}`).join('\n\n') || '(no existing files read — this may need new files)'}
 
 ${searchResults.length ? `Relevant research:\n${searchResults.slice(0, 3).map(r => `- ${r.snippet}`).join('\n')}` : ''}
 
-Write the COMPLETE fix. Output format is STRICT — for each file you change or create, output exactly:
+Write the COMPLETE fix, following your plan above. Output format is STRICT — for each file you change or create, output exactly:
 ===FILE: relative/path.ext===
 <the ENTIRE new file content, nothing omitted, no partial diffs>
 ===ENDFILE===
@@ -176,8 +204,8 @@ COMMENT: <1-2 sentence comment to post on the issue>
     addLog(`💬 Commented on issue`);
   }
 
-  await logContribution(owner, repo, { type: 'solve-issue', issueNumber, prUrl, title: prTitle, filesChanged: changed });
-  return { log, prUrl, title: prTitle, filesChanged: changed, issue };
+  await logContribution(owner, repo, { type: 'solve-issue', issueNumber, prUrl, title: prTitle, filesChanged: changed, approach: plan?.approach });
+  return { log, prUrl, title: prTitle, filesChanged: changed, issue, plan };
 }
 
 async function logContribution(owner, repo, entry) {

@@ -10,13 +10,31 @@ export default function Settings() {
   const refreshModels = async () => { setRefreshing(true); await fetch(`${API}/models/refresh`, { method: 'POST' }); notify('✅ Model list refreshed', 'success'); setRefreshing(false) }
   const [webllmStatus, setWebllmStatus] = useState({})
   const [skills, setSkills] = useState([])
+  const [watch, setWatch] = useState({ enabled: false, intervalMinutes: 15, repos: [], log: [], lastRun: null })
+  const [newRepo, setNewRepo] = useState('')
   const loginWeb = async (provider) => { await fetch(`${API}/webllm/login/${provider}`, { method: 'POST' }); notify(`Browser window opened for ${provider} — log in there`, 'success') }
+
+  const refreshWatch = () => fetch(`${API}/watcher/status`).then(r=>r.json()).then(setWatch).catch(()=>{})
+  const toggleWatch = async () => { await fetch(`${API}/watcher/enabled`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ enabled: !watch.enabled }) }); refreshWatch() }
+  const addWatchRepo = async () => {
+    const [owner, repo] = (newRepo||'').split('/').map(s=>s.trim())
+    if (!owner || !repo) return notify('Format: owner/repo', 'error')
+    await fetch(`${API}/watcher/repos`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ owner, repo }) })
+    setNewRepo(''); refreshWatch()
+  }
+  const removeWatchRepo = async (key) => {
+    const [owner, repo] = key.split('/')
+    await fetch(`${API}/watcher/repos`, { method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ owner, repo }) })
+    refreshWatch()
+  }
+  const runWatchNow = async () => { notify('Checking watched repos now...', 'success'); await fetch(`${API}/watcher/run-now`, { method:'POST' }); refreshWatch() }
 
   useEffect(() => {
     fetch(`${API}/memory`).then(r => r.json()).then(setS)
     fetch(`${API}/brain/memory`).then(r => r.json()).then(d => setMemData(d.result)).catch(() => {})
     fetch(`${API}/webllm/status`).then(r=>r.json()).then(setWebllmStatus).catch(()=>{})
     fetch(`${API}/brain/skills`).then(r=>r.json()).then(d=>setSkills(d.result||[])).catch(()=>{})
+    fetch(`${API}/watcher/status`).then(r=>r.json()).then(setWatch).catch(()=>{})
   }, [])
 
   const save = async () => {
@@ -48,6 +66,39 @@ export default function Settings() {
 
   return (
     <div className="settings-layout">
+      <div className="panel">
+        <div className="panel-title">🟢 Live Agent — autonomous watch mode</div>
+        <p style={{fontSize:12,color:'var(--text2)',marginBottom:10}}>
+          Polls watched repos on its own schedule — no public URL needed (unlike the GitHub webhook).
+          Label any issue <code style={{background:'var(--bg3)',padding:'1px 5px',borderRadius:3}}>ai-fix</code> and it gets analyzed, planned, fixed, and PR'd automatically next poll.
+        </p>
+        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
+          <button className={`mini-btn ${watch.enabled?'':''}`} style={watch.enabled?{background:'var(--green)',color:'#fff',borderColor:'var(--green)'}:{}} onClick={toggleWatch}>
+            {watch.enabled ? '🟢 Watching' : '⭕ Off'}
+          </button>
+          <span style={{fontSize:12,color:'var(--text2)'}}>every</span>
+          <input className="input" type="number" min="5" style={{width:70}} value={watch.intervalMinutes} onChange={e => setWatch({...watch, intervalMinutes: e.target.value})} onBlur={async () => { await fetch(`${API}/watcher/interval`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({minutes:watch.intervalMinutes})}); refreshWatch() }} />
+          <span style={{fontSize:12,color:'var(--text2)'}}>min</span>
+          <button className="mini-btn" onClick={runWatchNow}>▶ Check now</button>
+        </div>
+        <div style={{display:'flex',gap:8,marginBottom:10}}>
+          <input className="input" placeholder="owner/repo" value={newRepo} onChange={e=>setNewRepo(e.target.value)} style={{flex:1}} />
+          <button className="mini-btn" onClick={addWatchRepo}>+ Watch</button>
+        </div>
+        {watch.repos?.length ? watch.repos.map(r => (
+          <div key={r} style={{display:'flex',alignItems:'center',gap:8,marginBottom:4,fontSize:13}}>
+            <span style={{flex:1}}>{r}</span>
+            <button className="mini-btn" onClick={()=>removeWatchRepo(r)}>✕</button>
+          </div>
+        )) : <div style={{fontSize:12,color:'var(--text3)',marginBottom:8}}>No repos watched yet</div>}
+        {watch.lastRun && <div style={{fontSize:11,color:'var(--text3)',marginTop:6}}>Last checked: {new Date(watch.lastRun).toLocaleString()}</div>}
+        {watch.log?.length > 0 && (
+          <div style={{marginTop:10,maxHeight:150,overflowY:'auto'}}>
+            {watch.log.slice(0,10).map((l,i) => <div key={i} style={{fontSize:11,color:'var(--text2)',padding:'2px 0'}}>{l.msg}</div>)}
+          </div>
+        )}
+      </div>
+
       <div className="panel">
         <div className="panel-title">🌐 Web LLMs (Claude / ChatGPT / Gemini)</div>
         <p style={{fontSize:12,color:'var(--text2)',marginBottom:10}}>Log in once per provider (opens a real browser window). Session persists — no API key needed.</p>
